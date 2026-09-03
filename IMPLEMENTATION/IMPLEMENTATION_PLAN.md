@@ -247,11 +247,35 @@ app/
 
 ## 5. Step-by-Step Implementation Roadmap
 
-1. **Phase 1: Database Setup & Infrastructure**:
+1. **Phase 1: Database Setup & Infrastructure & Universal User Profile**:
    - Supabase PostgreSQL schema migrations (complete all tables: `profiles`, `session_types`, `sessions`, `session_waitlists`, `session_availability_rules`, `session_availability_exceptions`, `bookings`, `booking_history`, `session_history`, `user_login_history`, `admin_audit_logs`, `system_notifications_log`).
    - Automated DB triggers (auto-create profile on auth signup, auto-promote `user` to `client` on booking, capacity sync, cancellation audit).
-   - Row-Level Security (RLS) policies for user, client, and admin roles.
-   - Storage buckets configuration for avatar and session media.
+   - Row-Level Security (RLS) policies for user, client, and admin roles with self-update permissions on `profiles`.
+   - Storage buckets configuration for avatar (`avatars`) and session media with authenticated upload policies.
+   - **Universal User Profile Page (`/client/profile`)**:
+     - Role-agnostic profile management accessible to all authenticated roles (`user`, `client`, `admin`).
+     - View and edit personal details (`full_name`, `phone`, `email` read-only display, avatar management).
+     - Supabase Storage avatar image upload with preview, validation, and automated profile URL update.
+     - Role badge, account status badge (`active`, `banned`, `rejected`), and member since timestamp.
+     - Top-left toast notifications for save/error states via `ToastContext`.
+   - **Root Page Navigation & Profile Dropdown (`/` - `app/page.tsx`)**:
+     - Standard modern profile avatar button in the root navigation header (replacing any static dashboard button).
+     - Dynamic display of user avatar image if available, with graceful placeholder/initials fallback.
+     - Interactive dropdown menu with:
+       - User identity overview (Name, Email, Role badge).
+       - Hyperlink navigation to Profile page (`/client/profile`).
+       - Preserved functional Sign Out action without modifying existing working logout logic.
+     - Click-outside dismissal and accessible navigation.
+
+   **Phase 1 Checklist**:
+   - [ ] Verify `profiles` table schema and RLS policies allow authenticated users to read and update their own record.
+   - [ ] Verify `avatars` storage bucket is provisioned with public read and authenticated write access.
+   - [ ] Implement universal Profile Page at `app/(client)/client/profile/page.tsx` supporting all role types (`user`, `client`, `admin`).
+   - [ ] Implement avatar upload functionality with Supabase Storage integration.
+   - [ ] Update root page header in `app/page.tsx` to detect user authentication state.
+   - [ ] Replace static dashboard button with modern Profile Avatar button and placeholder fallback.
+   - [ ] Implement dropdown menu on root page with link to Profile page (`/client/profile`) and preserved Log Out action.
+   - [ ] Verify end-to-end profile editing and avatar sync across all user roles.
 
 2. **Phase 2: Authentication & Route Protection**:
    - Supabase SSR Auth integration (`@supabase/ssr`).
@@ -295,3 +319,4 @@ app/
 8. **Phase 8: Build Verification & End-to-End Validation**:
    - Production build validation (`pnpm build`).
    - Comprehensive end-to-end verification across public browsing, booking, client dashboard, admin management, and RBAC protection.
+![alt text](image.png)

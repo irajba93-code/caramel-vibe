@@ -17,8 +17,10 @@ import {
   Settings,
   LogOut,
   Home,
-  ShieldCheck
+  ShieldCheck,
+  User as UserIcon
 } from 'lucide-react'
+import { Avatar } from '@/components/ui/Avatar'
 import type { Profile } from '@/lib/supabase/types'
 
 const NAV_ITEMS = [
@@ -68,7 +70,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
 
     checkAdminAuth()
-  }, [router, supabase, showToast])
+  }, [router, supabase, showToast, pathname])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -124,17 +126,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* User profile & quick sign out */}
         <div className="p-4 border-t border-border bg-background/50">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold shrink-0">
-                A
-              </div>
+            <Link
+              href="/client/profile"
+              title="Edit Profile"
+              className="flex items-center gap-2.5 overflow-hidden group flex-1 mr-2"
+            >
+              <Avatar
+                src={profile?.avatar_url}
+                name={profile?.full_name || 'Admin'}
+                size="sm"
+                className="w-8 h-8 group-hover:ring-2 ring-primary/30 transition-all"
+              />
               <div className="truncate">
-                <div className="text-xs font-bold text-foreground truncate">
+                <div className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
                   {profile?.full_name || 'Admin'}
                 </div>
                 <div className="text-[10px] text-muted-foreground truncate">{profile?.email}</div>
               </div>
-            </div>
+            </Link>
 
             <button
               onClick={handleSignOut}
@@ -150,8 +159,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <Home className="w-3 h-3" />
               <span>Storefront</span>
             </Link>
-            <Link href="/client/dashboard" className="hover:text-primary transition-colors">
-              Client View
+            <Link href="/client/profile" className="hover:text-primary transition-colors flex items-center gap-1">
+              <UserIcon className="w-3 h-3" />
+              <span>Profile</span>
             </Link>
           </div>
         </div>

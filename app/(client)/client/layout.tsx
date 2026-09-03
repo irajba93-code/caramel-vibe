@@ -2,14 +2,16 @@
 
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/ToastContext'
-import { User, LogOut, Calendar, Home, Sparkles } from 'lucide-react'
+import { User, LogOut, Calendar, Home, Sparkles, ShieldCheck } from 'lucide-react'
+import { Avatar } from '@/components/ui/Avatar'
 import type { Profile } from '@/lib/supabase/types'
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { showToast } = useToast()
   const supabase = createClient()
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -39,7 +41,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     }
 
     loadUserProfile()
-  }, [router, supabase])
+  }, [router, supabase, pathname])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -69,20 +71,54 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
                 <Home className="w-4 h-4" />
                 <span>Storefront</span>
               </Link>
-              <Link href="/client/dashboard" className="text-primary font-semibold flex items-center gap-1.5">
+              <Link
+                href="/client/dashboard"
+                className={`flex items-center gap-1.5 transition-colors ${
+                  pathname === '/client/dashboard'
+                    ? 'text-primary font-semibold'
+                    : 'hover:text-foreground'
+                }`}
+              >
                 <Calendar className="w-4 h-4" />
                 <span>Dashboard</span>
               </Link>
+              <Link
+                href="/client/profile"
+                className={`flex items-center gap-1.5 transition-colors ${
+                  pathname === '/client/profile'
+                    ? 'text-primary font-semibold'
+                    : 'hover:text-foreground'
+                }`}
+              >
+                <User className="w-4 h-4" />
+                <span>Profile</span>
+              </Link>
+              {profile?.role === 'admin' && (
+                <Link
+                  href="/admin/dashboard"
+                  className="flex items-center gap-1.5 text-accent font-semibold hover:text-accent/80 transition-colors"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Admin Console</span>
+                </Link>
+              )}
             </nav>
 
             <div className="h-4 w-px bg-border hidden sm:block" />
 
             {/* Profile Pill & Sign Out */}
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold text-xs">
-                  {profile?.full_name ? profile.full_name.charAt(0).toUpperCase() : 'U'}
-                </div>
+              <Link
+                href="/client/profile"
+                title="Manage Profile"
+                className="flex items-center gap-2 p-1 pr-2.5 rounded-full hover:bg-muted/60 transition-colors border border-transparent hover:border-border"
+              >
+                <Avatar
+                  src={profile?.avatar_url}
+                  name={profile?.full_name || profile?.email}
+                  size="sm"
+                  className="w-8 h-8"
+                />
                 <div className="hidden sm:block text-left">
                   <div className="text-xs font-semibold text-foreground leading-none">
                     {profile?.full_name || profile?.email?.split('@')[0] || 'Member'}
@@ -91,7 +127,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
                     Role: {profile?.role || 'user'}
                   </div>
                 </div>
-              </div>
+              </Link>
 
               <button
                 onClick={handleSignOut}
