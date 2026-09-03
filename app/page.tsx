@@ -5,7 +5,30 @@ import Image from 'next/image'
 import { ArrowRight, Camera, ChevronDown, ChevronLeft, ChevronRight, Menu, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { products, type Product } from '../lib/products'
 
-function Header({ onBag }: { onBag: () => void }) { return <header className="container-cv flex items-center justify-between py-6"><button className="md:hidden" aria-label="Open menu"><Menu size={20}/></button><a href="#top" className="font-display text-2xl tracking-tight">caramel<span className="text-primary">.</span>vibe</a><nav className="hidden gap-8 text-xs font-bold uppercase tracking-widest md:flex"><a href="#edit">The edit</a><a href="#story">Our story</a><a href="#faq">Questions</a></nav><button onClick={onBag} className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest"><span className="hidden sm:inline">Reserve</span><span className="text-primary">(01)</span></button></header> }
+import Link from 'next/link'
+
+function Header({ onBag }: { onBag: () => void }) {
+  return (
+    <header className="container-cv flex items-center justify-between py-6">
+      <button className="md:hidden" aria-label="Open menu"><Menu size={20}/></button>
+      <a href="#top" className="font-display text-2xl tracking-tight">caramel<span className="text-primary">.</span>vibe</a>
+      <nav className="hidden gap-8 text-xs font-bold uppercase tracking-widest md:flex">
+        <a href="#edit">The edit</a>
+        <a href="#story">Our story</a>
+        <a href="#faq">Questions</a>
+      </nav>
+      <div className="flex items-center gap-4">
+        <Link href="/login" className="text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors">
+          Sign In
+        </Link>
+        <button onClick={onBag} className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest border border-primary/20 px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+          <span className="hidden sm:inline">Reserve</span>
+          <span>(01)</span>
+        </button>
+      </div>
+    </header>
+  )
+}
 
 function Checkout({ product, open, onClose }: { product: Product; open: boolean; onClose: () => void }) { const [sent, setSent] = useState(false); if (!open) return null; return <div className="fixed inset-0 z-50 flex justify-end bg-foreground/35"><div className="h-full w-full max-w-md overflow-y-auto bg-card p-6 shadow-2xl sm:p-10"><div className="flex items-center justify-between"><p className="eyebrow">Private reservation</p><button onClick={onClose} aria-label="Close"><X size={20}/></button></div>{sent ? <div className="flex min-h-[70vh] flex-col items-start justify-center gap-5"><Sparkles className="text-primary" size={32}/><h2 className="font-display text-5xl">It&apos;s yours.</h2><p className="leading-7 text-muted-foreground">Thank you for choosing {product.name}. We&apos;ll reach out on WhatsApp to confirm your details.</p><button onClick={onClose} className="mt-4 border border-primary px-6 py-3 text-xs font-bold uppercase tracking-widest text-primary">Keep browsing</button></div> : <form onSubmit={(e) => { e.preventDefault(); setSent(true) }} className="mt-8 grid gap-5"><div className="flex items-center gap-4 border-b border-border pb-5"><Image src={product.image} alt="" width={80} height={80} className="h-20 w-20 object-contain"/><div><p className="font-display text-xl">{product.name}</p><p className="text-primary">{product.price}</p></div></div><label className="grid gap-2 text-xs font-bold uppercase tracking-widest">Full name<input required className="border border-border bg-transparent p-3 text-sm font-normal normal-case tracking-normal outline-primary"/></label><label className="grid gap-2 text-xs font-bold uppercase tracking-widest">Email<input required type="email" className="border border-border bg-transparent p-3 text-sm font-normal normal-case tracking-normal outline-primary"/></label><label className="grid gap-2 text-xs font-bold uppercase tracking-widest">Phone / WhatsApp<input required className="border border-border bg-transparent p-3 text-sm font-normal normal-case tracking-normal outline-primary"/></label><label className="grid gap-2 text-xs font-bold uppercase tracking-widest">Shipping address<textarea required rows={3} className="border border-border bg-transparent p-3 text-sm font-normal normal-case tracking-normal outline-primary"/></label><label className="grid gap-2 text-xs font-bold uppercase tracking-widest">Payment method<select className="border border-border bg-transparent p-3 text-sm font-normal normal-case tracking-normal outline-primary"><option>Cash on delivery</option><option>Mobile wallet</option><option>Bank transfer</option></select></label><button className="mt-2 flex items-center justify-center gap-3 bg-primary px-6 py-4 text-xs font-bold uppercase tracking-widest text-primary-foreground">Secure this vibe <ArrowRight size={16}/></button><p className="text-center text-xs leading-5 text-muted-foreground">Frontend reservation only. Our team will confirm availability with you.</p></form>}</div></div> }
 
