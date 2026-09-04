@@ -247,16 +247,24 @@ app/
 
 ## 5. Step-by-Step Implementation Roadmap
 
-1. **Phase 1: Database Setup & Infrastructure & Universal User Profile**:
+1. **Phase 1: Database Setup & Infrastructure & Universal User Profile (✅ Completed)**:
    - Supabase PostgreSQL schema migrations (complete all tables: `profiles`, `session_types`, `sessions`, `session_waitlists`, `session_availability_rules`, `session_availability_exceptions`, `bookings`, `booking_history`, `session_history`, `user_login_history`, `admin_audit_logs`, `system_notifications_log`).
    - Automated DB triggers (auto-create profile on auth signup, auto-promote `user` to `client` on booking, capacity sync, cancellation audit).
    - Row-Level Security (RLS) policies for user, client, and admin roles with self-update permissions on `profiles`.
-   - Storage buckets configuration for avatar (`avatars`) and session media with authenticated upload policies.
+   - Storage buckets configuration for avatar (`avatars`) and session media with authenticated upload policies and private signed-URL delivery.
    - **Universal User Profile Page (`/client/profile`)**:
      - Role-agnostic profile management accessible to all authenticated roles (`user`, `client`, `admin`).
-     - View and edit personal details (`full_name`, `phone`, `email` read-only display, avatar management).
-     - Supabase Storage avatar image upload with preview, validation, and automated profile URL update.
-     - Role badge, account status badge (`active`, `banned`, `rejected`), and member since timestamp.
+     - Display, formatting, and management of all 10 schema fields from `public.profiles`:
+       - `id`: Account UUID card with monospace styling, copy-to-clipboard action, and toast confirmation.
+       - `email`: Read-only verified login email with security explanatory badge.
+       - `full_name`: Editable full name text input with real-time state synchronization.
+       - `phone`: Editable contact/WhatsApp telephone input with helper copy.
+       - `avatar_url`: Supabase Storage upload (formats: JPG, PNG, WEBP, GIF; max 5MB), local preview, private signed-URL resolution via `Avatar.tsx`, and photo removal.
+       - `role`: Access tier badge and governance card detailing privileges (`admin` / Atelier Administrator, `client` / Verified Atelier Client, `user` / Standard Member).
+       - `status`: Account standing badge and indicator (`active`, `banned`, `rejected`).
+       - `ban_reason`: Prominent administrative restriction notice banner and support concierge contact if restricted; good standing verification when active.
+       - `created_at`: Formatted "Member Since" official registration date.
+       - `updated_at`: Formatted "Last Profile Update" audit timestamp updating dynamically on profile save.
      - Top-left toast notifications for save/error states via `ToastContext`.
    - **Root Page Navigation & Profile Dropdown (`/` - `app/page.tsx`)**:
      - Standard modern profile avatar button in the root navigation header (replacing any static dashboard button).
@@ -264,18 +272,19 @@ app/
      - Interactive dropdown menu with:
        - User identity overview (Name, Email, Role badge).
        - Hyperlink navigation to Profile page (`/client/profile`).
+       - Role-based navigation shortcuts (`/dashboard` for user/client, `/admin` for admin).
        - Preserved functional Sign Out action without modifying existing working logout logic.
      - Click-outside dismissal and accessible navigation.
 
    **Phase 1 Checklist**:
-   - [ ] Verify `profiles` table schema and RLS policies allow authenticated users to read and update their own record.
-   - [ ] Verify `avatars` storage bucket is provisioned with public read and authenticated write access.
-   - [ ] Implement universal Profile Page at `app/(client)/client/profile/page.tsx` supporting all role types (`user`, `client`, `admin`).
-   - [ ] Implement avatar upload functionality with Supabase Storage integration.
-   - [ ] Update root page header in `app/page.tsx` to detect user authentication state.
-   - [ ] Replace static dashboard button with modern Profile Avatar button and placeholder fallback.
-   - [ ] Implement dropdown menu on root page with link to Profile page (`/client/profile`) and preserved Log Out action.
-   - [ ] Verify end-to-end profile editing and avatar sync across all user roles.
+   - [x] Verify `profiles` table schema and RLS policies allow authenticated users to read and update their own record.
+   - [x] Verify `avatars` storage bucket is provisioned with private signed URL access and authenticated write access.
+   - [x] Implement universal Profile Page at `app/(client)/client/profile/page.tsx` supporting all role types (`user`, `client`, `admin`) with all 10 schema fields.
+   - [x] Implement avatar upload and removal functionality with Supabase Storage integration.
+   - [x] Update root page header in `app/page.tsx` to detect user authentication state.
+   - [x] Replace static dashboard button with modern Profile Avatar button and placeholder fallback.
+   - [x] Implement dropdown menu on root page with link to Profile page (`/client/profile`), role-based dashboard shortcuts, and preserved Log Out action.
+   - [x] Verify end-to-end profile editing, copy UUID, and avatar sync across all user roles.
 
 2. **Phase 2: Authentication & Route Protection**:
    - Supabase SSR Auth integration (`@supabase/ssr`).
