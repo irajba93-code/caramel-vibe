@@ -25,8 +25,21 @@ export interface Profile {
   updated_at: string
 }
 
+export interface Category {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  image_url: string | null
+  display_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface SessionType {
   id: string
+  category_id: string | null
   name: string
   slug: string
   description: string | null
@@ -91,6 +104,15 @@ export interface Booking {
   cancelled_at: string | null
   cancelled_by: string | null
   check_in_time: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AppSetting {
+  id: string
+  key: string
+  value: Json
+  description: string | null
   created_at: string
   updated_at: string
 }

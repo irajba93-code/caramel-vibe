@@ -286,21 +286,50 @@ app/
    - [x] Implement dropdown menu on root page with link to Profile page (`/client/profile`), role-based dashboard shortcuts, and preserved Log Out action.
    - [x] Verify end-to-end profile editing, copy UUID, and avatar sync across all user roles.
 
-2. **Phase 2: Authentication & Route Protection**:
-   - Supabase SSR Auth integration (`@supabase/ssr`).
-   - Sign Up page (`/signup`) with user registration (default role: `user`, status: `active`).
-   - Sign In page (`/login`) with error handling, session persistence, and login tracking (`/api/auth/record-login`).
-   - Password recovery and reset flows (`/forgot-password`, `/reset-password`).
-   - Next.js App Router Middleware with Role-Based Access Control (RBAC):
-     - Unauthenticated users redirected to `/login` when accessing protected routes.
-     - Protected Client routes (`/client/*` accessible to `client` and `user`).
-     - Protected Admin routes (`/admin/*` strictly accessible to `admin`).
+2. **Phase 2: Admin Operations UI Suite (Sessions, Categories, Clients & Bookings) & Database Foundations**:
+   - **Database Foundations & Missing Schemas (Supabase)**:
+     - Provision `categories` table (`id`, `name`, `slug`, `description`, `image_url`, `display_order`, `is_active`, timestamps) with RLS.
+     - Link `session_types.category_id` $\rightarrow$ `categories.id`.
+     - Provision `app_settings` table (`id`, `key`, `value` JSONB, `description`, timestamps) seeded with `max_booking_days_advance: 30`, `cancellation_lead_hours: 24`, studio details.
+     - Synchronize TypeScript models in `lib/supabase/types.ts`.
+   - **Admin UI Architecture & Layout Enhancements**:
+     - **Collapsible Sidebar**: Responsive expanding/collapsing navigation shell with brand mark, active indicators, and quick store preview link.
+       - Primary navigation links: **Sessions** (encompassing Sessions, Categories, Types, Availability), **Clients**, and **Bookings**.
+     - **Header & Navigation Bar**:
+       - Brand-consistent Profile Dropdown (matching root page with avatar, user info, role badge, profile link, and sign out).
+       - **Minimal Real-Time Notification Center**: Bell icon with unread indicator and slide-out notification drawer.
+       - **Contextual Quick Actions**: Dynamic primary CTA button tied to active view (`+ New Session`, `+ New Category`, `+ Record Booking`, `+ Invite Client`).
+     - **Breadcrumbs Navigation**: Subtle hierarchical path indicator above the content area (e.g. `Admin / Sessions / Categories`).
+     - **Executive KPI Summary Cards**:
+       - 4 Luxury KPI cards (Active Sessions, Total Bookings, On-Premises Expected Revenue, Client Network).
+       - **Trend Indicators** (e.g. `+14.2% vs last period`).
+       - **Date Range Filter** (`Today`, `Last 7 Days`, `This Month`, `Custom`).
+     - **Sessions View**: Sub-tabs for Atelier Sessions, Service Categories (full CRUD), Session Types, and Availability rules.
+     - **Clients View**: Searchable directory, client dossier drawer/modals, lifetime bookings, and moderation tools (Ban with reason, Reject, Restore).
+     - **Bookings View**: Master ledger, attendance check-in, in-person payment settlement, and cancellation workflows.
+     - **UI Strategy**: Skip global search and skeleton states for now; validate complete UI and interactions with rich mock data and top-left toasts before wiring live Supabase CRUD.
+   - **Real-Time Notification Center Architecture (Supabase Setup)**:
+     - *PostgreSQL Triggers & CDC*: DB triggers on `bookings` (status changes / walk-ins), `session_waitlists` (queue updates), and `admin_audit_logs`.
+     - *Supabase Realtime Channel*: Client subscription listening to `postgres_changes` on public schema for instant toast & bell badge updates.
+     - *Outbound Dispatch*: Integration with `system_notifications_log` for transactional audit trails.
+     - *Initial UI Phase*: Minimal luxury bell popover with mock activity alerts during UI validation.
 
-3. **Phase 3: Role Management & Mock-up Dashboards for Auth/Role Testing**:
-   - Create and configure the Admin user manually in Supabase (`auth.users` + `profiles.role = 'admin'`).
-   - Build Client/User Dashboard Mock-up (`/client/dashboard`) displaying user info, role badge (`user` or `client`), status, and sign-out action.
-   - Build Admin Dashboard Mock-up (`/admin/dashboard`) displaying admin badge, placeholder KPI cards, navigation shell, and sign-out action.
-   - Verify complete authentication and role-switching lifecycle (Sign up -> test user dashboard -> login as manual admin -> test admin dashboard -> test unauthorized access prevention).
+   **Phase 2 Checklist**:
+   - [x] Implement Collapsible Admin Sidebar with navigation for Sessions, Clients, and Bookings.
+   - [x] Implement brand-consistent Header with root-matching Profile Dropdown and Minimal Notification Bell.
+   - [x] Implement Breadcrumbs Navigation above content area.
+   - [x] Implement Executive KPI Cards with Trend Indicators and Date Range Filter.
+   - [x] Implement Contextual Quick Action button dynamically bound to active tab.
+   - [x] Implement Sessions view with sub-tabs for Sessions, Categories (CRUD), Session Types, and Availability.
+   - [x] Implement Clients Directory view with search, filter, dossier drawer, and moderation actions.
+   - [x] Implement Bookings Ledger view with check-in, payment status, and cancellation dialogs.
+   - [x] Validate entire mock UI lifecycle and top-left toasts with rich mock data.
+   - [x] Provision Supabase database tables (`categories`, `app_settings`, FK links) and RLS policies.
+   - [x] Connect live Supabase CRUD and Realtime subscriptions.
+
+3. **Phase 3: Role Management & Live Integration**:
+   - Create and configure the Admin user in Supabase (`auth.users` + `profiles.role = 'admin'`).
+   - Validate live data binding and role-switching lifecycle.
 
 4. **Phase 4: Design System & Core Primitives**:
    - Tailwind CSS tokens for Caramel Vibe luxury palette (Linen Cream `#f8f3eb`, Espresso `#3b2720`, Caramel Terracotta `#a85d35`, Honey `#c99555`).
