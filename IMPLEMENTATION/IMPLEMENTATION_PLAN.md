@@ -308,53 +308,57 @@ app/
      - **Clients View**: Searchable directory, client dossier drawer/modals, lifetime bookings, and moderation tools (Ban with reason, Reject, Restore).
      - **Bookings View**: Master ledger, attendance check-in, in-person payment settlement, and cancellation workflows.
      - **UI Strategy**: Skip global search and skeleton states for now; validate complete UI and interactions with rich mock data and top-left toasts before wiring live Supabase CRUD.
-   - **Real-Time Notification Center Architecture (Supabase Setup)**:
-     - *PostgreSQL Triggers & CDC*: DB triggers on `bookings` (status changes / walk-ins), `session_waitlists` (queue updates), and `admin_audit_logs`.
-     - *Supabase Realtime Channel*: Client subscription listening to `postgres_changes` on public schema for instant toast & bell badge updates.
-     - *Outbound Dispatch*: Integration with `system_notifications_log` for transactional audit trails.
-     - *Initial UI Phase*: Minimal luxury bell popover with mock activity alerts during UI validation.
 
-   **Phase 2 Checklist**:
-   - [x] Implement Collapsible Admin Sidebar with navigation for Sessions, Clients, and Bookings.
-   - [x] Implement brand-consistent Header with root-matching Profile Dropdown and Minimal Notification Bell.
-   - [x] Implement Breadcrumbs Navigation above content area.
-   - [x] Implement Executive KPI Cards with Trend Indicators and Date Range Filter.
-   - [x] Implement Contextual Quick Action button dynamically bound to active tab.
-   - [x] Implement Sessions view with sub-tabs for Sessions, Categories (CRUD), Session Types, and Availability.
-   - [x] Implement Clients Directory view with search, filter, dossier drawer, and moderation actions.
-   - [x] Implement Bookings Ledger view with check-in, payment status, and cancellation dialogs.
-   - [x] Validate entire mock UI lifecycle and top-left toasts with rich mock data.
-   - [x] Provision Supabase database tables (`categories`, `app_settings`, FK links) and RLS policies.
-   - [x] Connect live Supabase CRUD and Realtime subscriptions.
+    **Phase 2 Checklist**:
+    - [x] Implement Collapsible Admin Sidebar with navigation for Dashboard, Sessions, Clients, and Bookings.
+    - [x] Implement Mobile Off-Canvas Drawer (slide-over sheet with dark backdrop overlay) and desktop icon-only collapse mode with external/internal toggle controls.
+    - [x] Implement brand-consistent Header with root-matching Profile Dropdown, Mobile Hamburger Trigger, and Minimal Notification Bell.
+    - [x] Implement Breadcrumbs Navigation above content area.
+    - [x] Implement Executive KPI Cards with dynamic calculations, Trend Indicators and Date Range Filter (`AdminKpiCards.tsx`).
+    - [x] Implement Contextual Quick Action button dynamically bound to active tab.
+    - [x] Implement Sessions view with sub-tabs for Sessions, Categories (CRUD), Session Types, and Availability.
+    - [x] Implement full Sessions CRUD with live editing drawer, deletion confirmation dialog, details inspection drawer with attendee roster, and real-time capacity tracking.
+    - [x] Implement Clients Directory view with search, filter, dossier drawer, client edit capabilities, moderation actions (ban with reason, reject, restore), anti-lockout self-protection, and "You" self-row badge.
+    - [x] Implement Bookings Ledger view with 1-click check-in, payment status toggling, walk-in creation, and cancellation dialogs.
+    - [x] Implement Multi-Field Column Ordering / Sorting (`SortableHeader`) across all admin tables (asc/desc with visual indicators).
+    - [x] Implement Date Range Filtering (`AdminDateFilter`) with common presets (Today, Last 7 Days, Next 7 Days, This Month, All Time) and custom start/end date pickers.
+    - [x] Implement Fully Functional Executive Admin Dashboard (`app/(admin)/admin/dashboard/page.tsx`) with fast guest lookup, live capacity gauges, 1-click check-ins with timestamps, dynamic agenda stats, and settings sync.
+    - [x] Implement Recent Activities Feed (`AdminRecentActivities.tsx`) with interactive **Admin** and **Client** activity filter pills, search, and target navigation.
+    - [x] Validate entire UI lifecycle and top-left toasts with rich interactive mock and live data state.
+    - [x] Provision Supabase database tables (`categories`, `app_settings`, FK links) and RLS policies.
+    - [x] Connect live Supabase CRUD and Realtime subscriptions.
+    - [x] Resolve Supabase Auth schema triggers and populate `auth.identities` records for demo credentials.
+    - [x] Seed live test bookings for standard User and VIP Client personas via Supabase MCP.
 
 3. **Phase 3: Role Management & Live Integration**:
-   - Create and configure the Admin user in Supabase (`auth.users` + `profiles.role = 'admin'`).
-   - Validate live data binding and role-switching lifecycle.
+    - [x] Create and configure the Admin user in Supabase (`auth.users` + `profiles.role = 'admin'`).
+    - [x] Configure password hashes with 10-round bcrypt and enable `user_login_history` RLS insert policy.
+    - [x] Validate live data binding and role-switching lifecycle.
 
 4. **Phase 4: Design System & Core Primitives**:
-   - Tailwind CSS tokens for Caramel Vibe luxury palette (Linen Cream `#f8f3eb`, Espresso `#3b2720`, Caramel Terracotta `#a85d35`, Honey `#c99555`).
-   - Screen toast system anchored to Top-Left (`top-4 left-4 z-50`).
-   - Reusable Shadcn-inspired UI components (Buttons, Cards, Dialogs, Badges, Table primitives, Date Pickers).
+    - [x] Tailwind CSS tokens for Caramel Vibe luxury palette (Linen Cream `#f8f3eb`, Espresso `#3b2720`, Caramel Terracotta `#a85d35`, Honey `#c99555`).
+    - [x] Screen toast system anchored to Top-Left (`top-4 left-4 z-50`).
+    - [x] Reusable Shadcn-inspired UI components (Buttons, Cards, Dialogs, Badges, Table primitives, Date Pickers).
 
 5. **Phase 5: Public Catalog, Booking & Waitlist**:
-   - Live atelier sessions showcase and filterable public catalog (`/sessions`).
-   - Public session detail with slot selection, on-premise payment options, and waitlist registration (`/sessions/[slug]`).
-   - Auto-role promotion trigger validation (promotes `user` to `client` upon booking).
-   - Transactional notification dispatch triggers.
+    - Live atelier sessions showcase and filterable public catalog (`/sessions`).
+    - Public session detail with slot selection, on-premise payment options, and waitlist registration (`/sessions/[slug]`).
+    - Auto-role promotion trigger validation (promotes `user` to `client` upon booking).
+    - Transactional notification dispatch triggers.
 
 6. **Phase 6: Full Client Portal**:
-   - Client dashboard with upcoming appointment countdown, stats, and booking ledger (`/client/dashboard`, `/client/bookings`).
-   - Dedicated booking dossier with `.ics` calendar export and cancellation dialog (`/client/bookings/[id]`).
-   - Client profile preferences and avatar upload (`/client/profile`).
+    - Client dashboard with upcoming appointment countdown, stats, and booking ledger (`/client/dashboard`, `/client/bookings`).
+    - Dedicated booking dossier with `.ics` calendar export and cancellation dialog (`/client/bookings/[id]`).
+    - Client profile preferences and avatar upload (`/client/profile`).
 
 7. **Phase 7: Full Admin Operations Console**:
-   - Comprehensive admin dashboard with revenue analytics and attendance roster (`/admin/dashboard`).
-   - Sessions CRUD, schedule availability rules, and attendee check-in (`/admin/sessions`, `/admin/sessions/[id]/availability`).
-   - Master bookings ledger with status filters and CSV export (`/admin/bookings`).
-   - Client directory with moderation tools (ban/reject dialogs) and client dossier (`/admin/clients/[id]`).
-   - Reporting, audit & login logs, and studio settings (`/admin/reporting`, `/admin/logs`, `/admin/settings`).
+    - [x] Comprehensive admin dashboard with live revenue analytics, attendance roster, and quick actions (`/admin/dashboard`).
+    - [x] Recent Activities & Audit Log feed with interactive **Admin / Client filters**, quick search, timestamps, and target references (`components/admin/AdminRecentActivities.tsx`).
+    - [x] Sessions CRUD orchestration with live editing, deletion with confirmation dialogs, inspection drawer with attendee rosters, KPIs, schedule availability rules, and attendee check-in (`/admin/sessions`, `/admin/sessions/[id]/availability`).
+    - [x] Master bookings ledger with status filters, sorting, date ranges, and 1-click check-in (`/admin/bookings`).
+    - [x] Client directory with moderation tools (ban/reject dialogs), client editing, and client dossier (`/admin/clients`).
+    - [x] Live studio parameters, settings sync, and real-time alerts.
 
 8. **Phase 8: Build Verification & End-to-End Validation**:
-   - Production build validation (`pnpm build`).
-   - Comprehensive end-to-end verification across public browsing, booking, client dashboard, admin management, and RBAC protection.
-![alt text](image.png)
+    - [x] Production build validation (`pnpm build`) passing across all 19 application routes with 0 errors.
+    - [x] End-to-end verification of all interactive workflows, responsive drawer layouts, sorting, filtering, and Top-Left toast feedback.

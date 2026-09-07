@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   BookOpen,
   Search,
@@ -21,6 +21,9 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/AdminHeader'
+import { AdminDateFilter, DEFAULT_DATE_PRESETS } from '@/components/admin/AdminDateFilter'
+import { SortableHeader } from '@/components/admin/SortableHeader'
+import { matchesDateRange, sortItems } from '@/lib/admin/filterUtils'
 import { useAdminMock } from '@/context/AdminMockContext'
 import { AdminBooking } from '@/lib/admin/mockData'
 
@@ -36,9 +39,19 @@ export default function AdminBookingsPage() {
     clients,
   } = useAdminMock()
 
+  // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [paymentFilter, setPaymentFilter] = useState('all')
+
+  // Date Range Filter State
+  const [datePreset, setDatePreset] = useState('all')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string>('created_at')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
 
   // Selected Booking Drawer
   const [selectedBooking, setSelectedBooking] = useState<AdminBooking | null>(null)
@@ -63,17 +76,48 @@ export default function AdminBookingsPage() {
     admin_notes: '',
   })
 
-  // Filtered Bookings
-  const filteredBookings = bookings.filter((bk) => {
-    const matchesStatus = statusFilter === 'all' || bk.status === statusFilter
-    const matchesPayment = paymentFilter === 'all' || bk.payment_status === paymentFilter
-    const matchesSearch =
-      bk.booking_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      bk.client_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      bk.client_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      bk.session_title.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesStatus && matchesPayment && matchesSearch
-  })
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      // Default to desc for prices, dates, and slots; asc for text names
+      if (['total_price', 'slots_booked', 'created_at', 'session_date'].includes(field)) {
+        setSortDirection('desc')
+      } else {
+        setSortDirection('asc')
+      }
+    }
+  }
+
+  // Filter & Sort Bookings
+  const processedBookings = useMemo(() => {
+    const filtered = bookings.filter((bk) => {
+      const matchesStatus = statusFilter === 'all' || bk.status === statusFilter
+      const matchesPayment = paymentFilter === 'all' || bk.payment_status === paymentFilter
+      const matchesSearch =
+        bk.booking_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        bk.client_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        bk.client_email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        bk.session_title.toLowerCase().includes(searchQuery.toLowerCase())
+
+      // Find linked session start_time if available for exact date matching
+      const linkedSession = sessions.find((s) => s.id === bk.session_id)
+      const targetDate = linkedSession?.start_time || bk.created_at
+
+      const matchesDate = matchesDateRange(targetDate, datePreset, startDate, endDate)
+
+      return matchesStatus && matchesPayment && matchesSearch && matchesDate
+    })
+
+    return sortItems<AdminBooking>(filtered, sortField, sortDirection, {
+      session_date: (b) => {
+        const s = sessions.find((x) => x.id === b.session_id)
+        return s?.start_time || b.created_at
+      },
+      check_in_time: (b) => (b.check_in_time ? new Date(b.check_in_time).getTime() : 0),
+    })
+  }, [bookings, sessions, statusFilter, paymentFilter, searchQuery, datePreset, startDate, endDate, sortField, sortDirection])
 
   const openDossier = (bk: AdminBooking) => {
     setSelectedBooking(bk)
@@ -137,6 +181,15 @@ export default function AdminBookingsPage() {
     setWalkInModalOpen(false)
   }
 
+  const handleResetFilters = () => {
+    setSearchQuery('')
+    setStatusFilter('all')
+    setPaymentFilter('all')
+    setDatePreset('all')
+    setStartDate('')
+    setEndDate('')
+  }
+
   return (
     <div className="flex-1 flex flex-col min-w-0">
       {/* Admin Header */}
@@ -146,7 +199,7 @@ export default function AdminBookingsPage() {
           { label: 'Master Bookings Ledger' },
         ]}
         title="Master Bookings &amp; Attendance"
-        subtitle="Track appointments, process in-person settlements, perform check-ins, and manage private notes."
+        subtitle="Track appointments, filter by date ranges, sort by columns, process in-person settlements, and perform check-ins."
         actionButton={{
           label: 'Record Booking',
           onClick: () => setWalkInModalOpen(true),
@@ -156,76 +209,163 @@ export default function AdminBookingsPage() {
 
       {/* Main Content Area */}
       <div className="p-6 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
-        {/* Search & Multi-Filters */}
-        <div className="bg-card border border-border rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by booking #, client, or session..."
-              className="w-full pl-9 pr-4 py-2 rounded-xl bg-background border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-            {/* Booking Status Filter */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-muted-foreground font-semibold text-[11px]">Status:</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="all">All Statuses</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="no_show">No Show</option>
-              </select>
+        {/* Search & Multi-Filters Control Panel */}
+        <div className="bg-card border border-border rounded-2xl p-5 space-y-4 shadow-xs">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            {/* Search Input */}
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by booking #, client, or session..."
+                className="w-full pl-9 pr-4 py-2 rounded-xl bg-background border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
             </div>
 
-            {/* Payment Status Filter */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="text-muted-foreground font-semibold text-[11px]">Payment:</span>
-              <select
-                value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value)}
-                className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                <option value="all">All Settlements</option>
-                <option value="paid_on_premise">Paid on Premise</option>
-                <option value="pending_on_premise">Pending on Premise</option>
-                <option value="waived">Waived / VIP</option>
-              </select>
+            {/* Dropdown Filters */}
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+              {/* Booking Status Filter */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-muted-foreground font-semibold text-[11px]">Status:</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="no_show">No Show</option>
+                </select>
+              </div>
+
+              {/* Payment Status Filter */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-muted-foreground font-semibold text-[11px]">Payment:</span>
+                <select
+                  value={paymentFilter}
+                  onChange={(e) => setPaymentFilter(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  <option value="all">All Settlements</option>
+                  <option value="paid_on_premise">Paid on Premise</option>
+                  <option value="pending_on_premise">Pending on Premise</option>
+                  <option value="waived">Waived / VIP</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Date Range Filter Bar */}
+          <div className="pt-3 border-t border-border/70 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <AdminDateFilter
+              preset={datePreset}
+              onPresetChange={setDatePreset}
+              startDate={startDate}
+              endDate={endDate}
+              onStartDateChange={setStartDate}
+              onEndDateChange={setEndDate}
+              onReset={() => {
+                setDatePreset('all')
+                setStartDate('')
+                setEndDate('')
+              }}
+              label="Appointment Date"
+            />
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="font-semibold text-[11px]">
+                Showing <strong className="text-foreground">{processedBookings.length}</strong> of{' '}
+                <strong className="text-foreground">{bookings.length}</strong> bookings
+              </span>
+              {(searchQuery || statusFilter !== 'all' || paymentFilter !== 'all' || datePreset !== 'all' || startDate || endDate) && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
+                >
+                  Clear all filters
+                </button>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Bookings Ledger Table */}
+        {/* Bookings Ledger Table with Click-to-Sort Headers */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-border bg-background/70 text-muted-foreground uppercase font-bold tracking-wider text-[10px]">
-                  <th className="py-3.5 px-4">Booking &amp; Customer</th>
-                  <th className="py-3.5 px-4">Atelier Session</th>
-                  <th className="py-3.5 px-4">Slots &amp; Price</th>
-                  <th className="py-3.5 px-4">Settlement Status</th>
-                  <th className="py-3.5 px-4">Check-In</th>
+                  <SortableHeader
+                    field="client_name"
+                    currentSortField={sortField}
+                    currentSortDirection={sortDirection}
+                    onSort={handleSort}
+                  >
+                    Booking &amp; Customer
+                  </SortableHeader>
+
+                  <SortableHeader
+                    field="session_title"
+                    currentSortField={sortField}
+                    currentSortDirection={sortDirection}
+                    onSort={handleSort}
+                  >
+                    Atelier Session
+                  </SortableHeader>
+
+                  <SortableHeader
+                    field="session_date"
+                    currentSortField={sortField}
+                    currentSortDirection={sortDirection}
+                    onSort={handleSort}
+                  >
+                    Appointment Date
+                  </SortableHeader>
+
+                  <SortableHeader
+                    field="total_price"
+                    currentSortField={sortField}
+                    currentSortDirection={sortDirection}
+                    onSort={handleSort}
+                  >
+                    Slots &amp; Price
+                  </SortableHeader>
+
+                  <SortableHeader
+                    field="payment_status"
+                    currentSortField={sortField}
+                    currentSortDirection={sortDirection}
+                    onSort={handleSort}
+                  >
+                    Settlement Status
+                  </SortableHeader>
+
+                  <SortableHeader
+                    field="check_in_time"
+                    currentSortField={sortField}
+                    currentSortDirection={sortDirection}
+                    onSort={handleSort}
+                  >
+                    Check-In
+                  </SortableHeader>
+
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
-                {filteredBookings.length === 0 ? (
+                {processedBookings.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                      No bookings matching search filter criteria.
+                    <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                      No bookings matching search and date filter criteria.
                     </td>
                   </tr>
                 ) : (
-                  filteredBookings.map((bk) => (
+                  processedBookings.map((bk) => (
                     <tr
                       key={bk.id}
                       onClick={() => openDossier(bk)}
@@ -245,9 +385,19 @@ export default function AdminBookingsPage() {
                         <div className="font-semibold text-foreground max-w-xs truncate">
                           {bk.session_title}
                         </div>
-                        <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-accent" />
+                        <div className="text-[11px] text-muted-foreground">
+                          {bk.client_phone || 'No phone'}
+                        </div>
+                      </td>
+
+                      {/* Appointment Date */}
+                      <td className="py-4 px-4 space-y-1">
+                        <div className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-accent shrink-0" />
                           <span>{bk.session_date}</span>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          Booked {new Date(bk.created_at).toLocaleDateString()}
                         </div>
                       </td>
 
@@ -589,7 +739,7 @@ export default function AdminBookingsPage() {
                     required
                     value={walkInForm.client_name}
                     onChange={(e) => setWalkInForm({ ...walkInForm, client_name: e.target.value })}
-                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
                 <div className="space-y-1">
@@ -601,7 +751,7 @@ export default function AdminBookingsPage() {
                     required
                     value={walkInForm.client_email}
                     onChange={(e) => setWalkInForm({ ...walkInForm, client_email: e.target.value })}
-                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
               </div>
@@ -618,7 +768,7 @@ export default function AdminBookingsPage() {
                     max={5}
                     value={walkInForm.slots_booked}
                     onChange={(e) => setWalkInForm({ ...walkInForm, slots_booked: Number(e.target.value) })}
-                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
 
@@ -634,7 +784,7 @@ export default function AdminBookingsPage() {
                         payment_status: e.target.value as AdminBooking['payment_status'],
                       })
                     }
-                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   >
                     <option value="paid_on_premise">Paid on Premise</option>
                     <option value="pending_on_premise">Pending on Premise</option>

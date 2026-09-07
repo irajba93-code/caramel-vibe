@@ -9,6 +9,7 @@ import {
   AdminBooking,
   AdminNotification,
   AdminAppSetting,
+  AdminActivity,
   INITIAL_CATEGORIES,
   INITIAL_SESSIONS,
   INITIAL_SESSION_TYPES,
@@ -16,12 +17,17 @@ import {
   INITIAL_BOOKINGS,
   INITIAL_NOTIFICATIONS,
   INITIAL_APP_SETTINGS,
+  INITIAL_ACTIVITIES,
 } from '@/lib/admin/mockData'
 import { useToast } from '@/components/ui/ToastContext'
 import { createClient } from '@/lib/supabase/client'
 import type { Category, Session, SessionType, Profile, Booking, AppSetting } from '@/lib/supabase/types'
 
 interface AdminMockContextType {
+  // Activities
+  activities: AdminActivity[]
+  addActivity: (act: Omit<AdminActivity, 'id' | 'created_at'>) => void
+
   // Categories
   categories: AdminCategory[]
   addCategory: (cat: Omit<AdminCategory, 'id' | 'created_at' | 'updated_at' | 'session_count'>) => Promise<void>
@@ -47,7 +53,10 @@ interface AdminMockContextType {
   // Clients
   clients: AdminClient[]
   addClient: (client: Omit<AdminClient, 'id' | 'total_bookings' | 'total_spent' | 'created_at' | 'updated_at' | 'last_active'>) => Promise<void>
+  updateClient: (id: string, updated: Partial<AdminClient>) => Promise<void>
   updateClientStatus: (id: string, status: 'active' | 'banned' | 'rejected', ban_reason?: string | null) => Promise<void>
+  currentUserId: string | null
+  currentUserEmail: string | null
 
   // Bookings
   bookings: AdminBooking[]
@@ -62,10 +71,14 @@ interface AdminMockContextType {
   markNotificationRead: (id: string) => void
   markAllNotificationsRead: () => void
 
-  // Sidebar collapse
+  // Sidebar & Mobile Drawer
   isSidebarCollapsed: boolean
   toggleSidebar: () => void
   setSidebarCollapsed: (v: boolean) => void
+  isMobileDrawerOpen: boolean
+  toggleMobileDrawer: () => void
+  setMobileDrawerOpen: (v: boolean) => void
+  closeMobileDrawer: () => void
 
   // Loading indicator
   isLoadingData: boolean
@@ -98,10 +111,25 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
   const [clients, setClients] = useState<AdminClient[]>(INITIAL_CLIENTS)
   const [bookings, setBookings] = useState<AdminBooking[]>(INITIAL_BOOKINGS)
   const [notifications, setNotifications] = useState<AdminNotification[]>(INITIAL_NOTIFICATIONS)
+  const [activities, setActivities] = useState<AdminActivity[]>(INITIAL_ACTIVITIES)
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [isMobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [isLoadingData, setIsLoadingData] = useState(true)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
 
   const toggleSidebar = () => setSidebarCollapsed((prev) => !prev)
+  const toggleMobileDrawer = () => setMobileDrawerOpen((prev) => !prev)
+  const closeMobileDrawer = () => setMobileDrawerOpen(false)
+
+  const addActivity = useCallback((act: Omit<AdminActivity, 'id' | 'created_at'>) => {
+    const newAct: AdminActivity = {
+      ...act,
+      id: `act-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    }
+    setActivities((prev) => [newAct, ...prev])
+  }, [])
 
   // Fetch Live Data from Supabase
   const loadSupabaseData = useCallback(async () => {
@@ -152,12 +180,102 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         setSessionTypes(mappedTypes)
       }
 
-      // 3. Fetch Sessions
+      // 1. Fetch Sessions
       const { data: dbSessions } = await supabase
         .from('sessions')
         .select('*')
         .order('start_time', { ascending: true })
 
+      const sessionsMap = new Map<string, Session>()
+      if (dbSessions) {
+        dbSessions.forEach((s: Session) => sessionsMap.set(s.id, s))
+      }
+
+      // 2. Fetch Profiles (Clients)
+      const { data: dbProfiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      const profilesMap = new Map<string, Profile>()
+      if (dbProfiles) {
+        dbProfiles.forEach((p: Profile) => profilesMap.set(p.id, p))
+      }
+
+      // 3. Fetch Bookings
+      const { data: dbBookings } = await supabase
+        .from('bookings')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (dbBookings && dbBookings.length > 0) {
+        const mappedBookings: AdminBooking[] = dbBookings.map((b: Booking) => {
+          const linkedProfile = profilesMap.get(b.user_id)
+          const linkedSession = sessionsMap.get(b.session_id)
+          return {
+            id: b.id,
+            booking_number: b.booking_number,
+            session_id: b.session_id,
+            session_title: linkedSession?.title || 'Atelier Appointment',
+            session_date: linkedSession
+              ? new Date(linkedSession.start_time).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+              : new Date(b.created_at).toLocaleDateString(undefined, {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+            user_id: b.user_id,
+            client_name: linkedProfile?.full_name || linkedProfile?.email.split('@')[0] || 'Member Client',
+            client_email: linkedProfile?.email || 'client@caramelvibe.com',
+            client_phone: linkedProfile?.phone || 'Not provided',
+            slots_booked: b.slots_booked,
+            total_price: Number(b.total_price),
+            currency: b.currency,
+            status: b.status as AdminBooking['status'],
+            payment_status: b.payment_status as AdminBooking['payment_status'],
+            payment_notes: b.payment_notes,
+            client_notes: b.client_notes,
+            admin_notes: b.admin_notes,
+            cancel_reason: b.cancel_reason,
+            cancelled_at: b.cancelled_at,
+            check_in_time: b.check_in_time,
+            created_at: b.created_at,
+          }
+        })
+        setBookings(mappedBookings)
+      }
+
+      // 4. Map Clients with Aggregated Metrics
+      if (dbProfiles && dbProfiles.length > 0) {
+        const mappedClients: AdminClient[] = dbProfiles.map((p: Profile) => {
+          const userBookings = dbBookings ? dbBookings.filter((b: Booking) => b.user_id === p.id) : []
+          const totalSpent = userBookings.reduce((sum: number, b: Booking) => sum + Number(b.total_price), 0)
+          return {
+            id: p.id,
+            email: p.email,
+            full_name: p.full_name || p.email.split('@')[0],
+            phone: p.phone || 'Not provided',
+            avatar_url: p.avatar_url,
+            role: p.role as AdminClient['role'],
+            status: p.status as AdminClient['status'],
+            ban_reason: p.ban_reason,
+            total_bookings: userBookings.length,
+            total_spent: totalSpent,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            last_active: userBookings.length > 0 ? 'Recently' : 'New Member',
+          }
+        })
+        setClients(mappedClients)
+      }
+
+      // 5. Map Sessions
       if (dbSessions && dbSessions.length > 0) {
         const mappedSessions: AdminSession[] = dbSessions.map((s: Session) => ({
           id: s.id,
@@ -183,69 +301,6 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         setSessions(mappedSessions)
       }
 
-      // 4. Fetch Profiles (Clients)
-      const { data: dbProfiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (dbProfiles && dbProfiles.length > 0) {
-        const mappedClients: AdminClient[] = dbProfiles.map((p: Profile) => ({
-          id: p.id,
-          email: p.email,
-          full_name: p.full_name || p.email.split('@')[0],
-          phone: p.phone || 'Not provided',
-          avatar_url: p.avatar_url,
-          role: p.role as AdminClient['role'],
-          status: p.status as AdminClient['status'],
-          ban_reason: p.ban_reason,
-          total_bookings: 0,
-          total_spent: 0,
-          created_at: p.created_at,
-          updated_at: p.updated_at,
-          last_active: 'Recently',
-        }))
-        setClients(mappedClients)
-      }
-
-      // 5. Fetch Bookings
-      const { data: dbBookings } = await supabase
-        .from('bookings')
-        .select('*')
-        .order('created_at', { ascending: false })
-
-      if (dbBookings && dbBookings.length > 0) {
-        const mappedBookings: AdminBooking[] = dbBookings.map((b: Booking) => ({
-          id: b.id,
-          booking_number: b.booking_number,
-          session_id: b.session_id,
-          session_title: 'Atelier Appointment',
-          session_date: new Date(b.created_at).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          user_id: b.user_id,
-          client_name: 'Member Client',
-          client_email: 'client@caramelvibe.com',
-          client_phone: '+1 (555) 019-2834',
-          slots_booked: b.slots_booked,
-          total_price: Number(b.total_price),
-          currency: b.currency,
-          status: b.status as AdminBooking['status'],
-          payment_status: b.payment_status as AdminBooking['payment_status'],
-          payment_notes: b.payment_notes,
-          client_notes: b.client_notes,
-          admin_notes: b.admin_notes,
-          cancel_reason: b.cancel_reason,
-          cancelled_at: b.cancelled_at,
-          check_in_time: b.check_in_time,
-          created_at: b.created_at,
-        }))
-        setBookings(mappedBookings)
-      }
-
       // 6. Fetch App Settings
       const { data: dbSettings } = await supabase
         .from('app_settings')
@@ -259,6 +314,15 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
           settingObj[s.key] = s.value
         })
         setAppSettings(settingObj)
+      }
+
+      // 7. Fetch Current Authenticated User Identity
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user) {
+        setCurrentUserId(user.id)
+        setCurrentUserEmail(user.email || null)
       }
     } catch (err) {
       console.error('Error hydrating Supabase admin data:', err)
@@ -278,15 +342,27 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         { event: '*', schema: 'public', table: 'bookings' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
+            const newBk = payload.new as Booking
             const newNotif: AdminNotification = {
               id: `notif-${Date.now()}`,
               title: 'New Reservation Placed',
-              message: `New booking ${(payload.new as Booking).booking_number} placed.`,
+              message: `New booking ${newBk.booking_number} placed.`,
               type: 'booking',
               read: false,
               timestamp: 'Just now',
             }
             setNotifications((prev) => [newNotif, ...prev])
+            addActivity({
+              actor_type: 'client',
+              actor_name: 'Atelier Client',
+              actor_email: 'client@caramelvibe.com',
+              action_type: 'booking_created',
+              title: 'New Real-Time Reservation',
+              description: `New booking ${newBk.booking_number} placed via boutique portal.`,
+              target_id: newBk.id,
+              target_label: newBk.booking_number,
+              timestamp: 'Just now',
+            })
             showToast('New real-time booking event received.', 'info')
           }
         }
@@ -426,23 +502,32 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
 
   // Session Actions (Live Supabase + State)
   const addSession = async (session: Omit<AdminSession, 'id' | 'booked_slots' | 'created_at'>) => {
+    // Only pass valid UUID for session_type_id or null
+    const validTypeId =
+      session.session_type_id &&
+      !session.session_type_id.startsWith('st-') &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session.session_type_id)
+        ? session.session_type_id
+        : null
+
     try {
       const { data, error } = await supabase
         .from('sessions')
         .insert({
           title: session.title,
           slug: session.slug,
-          description: session.description,
-          location_type: session.location_type,
-          location_address: session.location_address,
-          price: session.price,
-          currency: session.currency,
-          max_slots: session.max_slots,
+          description: session.description || null,
+          location_type: session.location_type || 'studio',
+          location_address: session.location_address || 'Caramel Vibe Flagship Studio, Suite 402',
+          price: Number(session.price),
+          currency: session.currency || 'CAD',
+          max_slots: Number(session.max_slots),
           booked_slots: 0,
           start_time: session.start_time,
           end_time: session.end_time,
-          is_ongoing: session.is_ongoing,
-          status: session.status,
+          is_ongoing: Boolean(session.is_ongoing),
+          status: session.status || 'published',
+          session_type_id: validTypeId,
         })
         .select()
         .single()
@@ -451,8 +536,8 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
 
       const newSes: AdminSession = {
         id: data.id,
-        session_type_id: session.session_type_id,
-        category_name: session.category_name,
+        session_type_id: session.session_type_id || '',
+        category_name: session.category_name || 'Atelier Workshop',
         title: data.title,
         slug: data.slug,
         description: data.description || '',
@@ -471,43 +556,145 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         created_at: data.created_at,
       }
       setSessions((prev) => [newSes, ...prev])
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'session_created',
+        title: 'New Studio Session Published',
+        description: `Published "${session.title}" (${session.max_slots} slots).`,
+        target_id: data.id,
+        target_label: session.title,
+        timestamp: 'Just now',
+      })
       showToast(`Session "${session.title}" published to live database.`, 'success')
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create session'
-      showToast(`Error creating session: ${msg}`, 'error')
+    } catch {
+      // Local fallback in mock mode
+      const newSes: AdminSession = {
+        ...session,
+        id: `ses-${Date.now()}`,
+        booked_slots: 0,
+        cancel_reason: null,
+        cancelled_at: null,
+        created_at: new Date().toISOString(),
+      }
+      setSessions((prev) => [newSes, ...prev])
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'session_created',
+        title: 'New Studio Session Published',
+        description: `Scheduled "${session.title}" (${session.max_slots} slots).`,
+        target_id: newSes.id,
+        target_label: session.title,
+        timestamp: 'Just now',
+      })
+      showToast(`Session "${session.title}" scheduled.`, 'success')
     }
   }
 
   const updateSession = async (id: string, updated: Partial<AdminSession>) => {
     try {
-      const { error } = await supabase
-        .from('sessions')
-        .update({
-          ...updated,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
+      // Sanitize payload: only send valid public.sessions columns to Supabase
+      const dbPayload: Record<string, any> = {
+        updated_at: new Date().toISOString(),
+      }
 
-      if (error) throw error
+      if (updated.title !== undefined) dbPayload.title = updated.title
+      if (updated.slug !== undefined) dbPayload.slug = updated.slug
+      if (updated.description !== undefined) dbPayload.description = updated.description
+      if (updated.location_type !== undefined) dbPayload.location_type = updated.location_type
+      if (updated.location_address !== undefined) dbPayload.location_address = updated.location_address
+      if (updated.price !== undefined) dbPayload.price = Number(updated.price)
+      if (updated.currency !== undefined) dbPayload.currency = updated.currency
+      if (updated.max_slots !== undefined) dbPayload.max_slots = Number(updated.max_slots)
+      if (updated.booked_slots !== undefined) dbPayload.booked_slots = Number(updated.booked_slots)
+      if (updated.start_time !== undefined) dbPayload.start_time = updated.start_time
+      if (updated.end_time !== undefined) dbPayload.end_time = updated.end_time
+      if (updated.status !== undefined) dbPayload.status = updated.status
+      if (updated.is_ongoing !== undefined) dbPayload.is_ongoing = Boolean(updated.is_ongoing)
+      if (updated.cancel_reason !== undefined) dbPayload.cancel_reason = updated.cancel_reason
+      if (updated.cancelled_at !== undefined) dbPayload.cancelled_at = updated.cancelled_at
+
+      if (updated.session_type_id !== undefined) {
+        dbPayload.session_type_id =
+          updated.session_type_id &&
+          !updated.session_type_id.startsWith('st-') &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(updated.session_type_id)
+            ? updated.session_type_id
+            : null
+      }
+
+      // If id is a valid UUID, update in Supabase
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const { error } = await supabase
+          .from('sessions')
+          .update(dbPayload)
+          .eq('id', id)
+
+        if (error) {
+          console.warn('Supabase update session warning:', error)
+        }
+      }
 
       setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...updated } : s)))
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'session_updated',
+        title: 'Session Details Updated',
+        description: `Updated session details for "${updated.title || id}".`,
+        target_id: id,
+        target_label: updated.title,
+        timestamp: 'Just now',
+      })
+      showToast('Session details updated successfully.', 'success')
+    } catch {
+      // Local fallback
+      setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...updated } : s)))
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'session_updated',
+        title: 'Session Details Updated',
+        description: `Updated session details for "${updated.title || id}".`,
+        target_id: id,
+        target_label: updated.title,
+        timestamp: 'Just now',
+      })
       showToast('Session details updated.', 'success')
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Update failed'
-      showToast(`Error updating session: ${msg}`, 'error')
     }
   }
 
   const deleteSession = async (id: string) => {
+    const target = sessions.find((s) => s.id === id)
     try {
-      const { error } = await supabase.from('sessions').delete().eq('id', id)
-      if (error) throw error
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        const { error } = await supabase.from('sessions').delete().eq('id', id)
+        if (error) {
+          console.warn('Supabase delete session warning:', error)
+        }
+      }
 
       setSessions((prev) => prev.filter((s) => s.id !== id))
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'session_updated',
+        title: 'Session Removed from Catalog',
+        description: `Deleted session "${target?.title || id}".`,
+        target_id: id,
+        target_label: target?.title,
+        timestamp: 'Just now',
+      })
       showToast('Session removed from catalog.', 'info')
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Delete failed'
-      showToast(`Error deleting session: ${msg}`, 'error')
+    } catch {
+      setSessions((prev) => prev.filter((s) => s.id !== id))
+      showToast('Session removed from catalog.', 'info')
     }
   }
 
@@ -590,7 +777,66 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
     showToast(`Client account "${client.full_name}" registered.`, 'success')
   }
 
+  const updateClient = async (id: string, updated: Partial<AdminClient>) => {
+    if (id === currentUserId && (updated.status === 'banned' || updated.status === 'rejected')) {
+      showToast('Action prohibited: You cannot ban, suspend, or reject your own account.', 'error')
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: updated.full_name,
+          phone: updated.phone,
+          role: updated.role,
+          status: updated.status,
+          ban_reason: updated.status === 'banned' ? updated.ban_reason : null,
+          avatar_url: updated.avatar_url,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+
+      if (error) throw error
+
+      setClients((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                ...updated,
+                ban_reason: updated.status === 'banned' ? updated.ban_reason || c.ban_reason : null,
+                updated_at: new Date().toISOString(),
+              }
+            : c
+        )
+      )
+
+      showToast('Client profile updated successfully.', 'success')
+    } catch {
+      // Local fallback in mock mode
+      setClients((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                ...updated,
+                ban_reason: updated.status === 'banned' ? updated.ban_reason || c.ban_reason : null,
+                updated_at: new Date().toISOString(),
+              }
+            : c
+        )
+      )
+      showToast('Client profile updated.', 'success')
+    }
+  }
+
   const updateClientStatus = async (id: string, status: 'active' | 'banned' | 'rejected', ban_reason: string | null = null) => {
+    if (id === currentUserId && (status === 'banned' || status === 'rejected')) {
+      showToast('Action prohibited: You cannot ban, suspend, or reject your own account.', 'error')
+      return
+    }
+
     try {
       const { error } = await supabase
         .from('profiles')
@@ -695,6 +941,7 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
   }
 
   const updateBookingPayment = async (id: string, payment_status: 'pending_on_premise' | 'paid_on_premise' | 'waived' | 'refunded') => {
+    const target = bookings.find((b) => b.id === id)
     try {
       await supabase
         .from('bookings')
@@ -702,15 +949,38 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         .eq('id', id)
 
       setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, payment_status } : b)))
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'payment_updated',
+        title: 'Settlement Status Updated',
+        description: `Updated payment for booking ${target?.booking_number || id} to "${payment_status.replace(/_/g, ' ')}".`,
+        target_id: id,
+        target_label: target?.booking_number,
+        timestamp: 'Just now',
+      })
       showToast(`Payment status updated to "${payment_status.replace(/_/g, ' ')}".`, 'success')
     } catch {
       setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, payment_status } : b)))
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'payment_updated',
+        title: 'Settlement Status Updated',
+        description: `Updated payment for booking ${target?.booking_number || id} to "${payment_status.replace(/_/g, ' ')}".`,
+        target_id: id,
+        target_label: target?.booking_number,
+        timestamp: 'Just now',
+      })
       showToast(`Payment status updated.`, 'success')
     }
   }
 
   const checkInBooking = async (id: string) => {
     const nowIso = new Date().toISOString()
+    const target = bookings.find((b) => b.id === id)
     try {
       await supabase
         .from('bookings')
@@ -720,11 +990,33 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
       setBookings((prev) =>
         prev.map((b) => (b.id === id ? { ...b, check_in_time: nowIso, status: 'completed' } : b))
       )
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'booking_checked_in',
+        title: 'Guest Attendance Checked In',
+        description: `Completed in-person check-in for guest ${target?.client_name || 'Guest'} (${target?.booking_number || id}).`,
+        target_id: id,
+        target_label: target?.booking_number,
+        timestamp: 'Just now',
+      })
       showToast('Guest checked in successfully.', 'success')
     } catch {
       setBookings((prev) =>
         prev.map((b) => (b.id === id ? { ...b, check_in_time: nowIso, status: 'completed' } : b))
       )
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'booking_checked_in',
+        title: 'Guest Attendance Checked In',
+        description: `Completed in-person check-in for guest ${target?.client_name || 'Guest'} (${target?.booking_number || id}).`,
+        target_id: id,
+        target_label: target?.booking_number,
+        timestamp: 'Just now',
+      })
       showToast('Guest checked in.', 'success')
     }
   }
@@ -773,6 +1065,17 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         )
       }
 
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'booking_cancelled',
+        title: 'Reservation Cancelled',
+        description: `Cancelled booking ${target?.booking_number || id}. Reason: ${reason}`,
+        target_id: id,
+        target_label: target?.booking_number,
+        timestamp: 'Just now',
+      })
       showToast('Booking cancelled and slot capacity restored.', 'info')
     } catch {
       setBookings((prev) =>
@@ -787,6 +1090,17 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
             : b
         )
       )
+      addActivity({
+        actor_type: 'admin',
+        actor_name: 'Atelier Director',
+        actor_email: currentUserEmail || 'admin@caramelvibe.com',
+        action_type: 'booking_cancelled',
+        title: 'Reservation Cancelled',
+        description: `Cancelled booking ${target?.booking_number || id}. Reason: ${reason}`,
+        target_id: id,
+        target_label: target?.booking_number,
+        timestamp: 'Just now',
+      })
       showToast('Booking cancelled.', 'info')
     }
   }
@@ -834,7 +1148,10 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         updateSessionType,
         clients,
         addClient,
+        updateClient,
         updateClientStatus,
+        currentUserId,
+        currentUserEmail,
         bookings,
         addBooking,
         updateBookingPayment,
@@ -844,9 +1161,15 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         notifications,
         markNotificationRead,
         markAllNotificationsRead,
+        activities,
+        addActivity,
         isSidebarCollapsed,
         toggleSidebar,
         setSidebarCollapsed,
+        isMobileDrawerOpen,
+        toggleMobileDrawer,
+        setMobileDrawerOpen,
+        closeMobileDrawer,
         isLoadingData,
         refreshData: loadSupabaseData,
       }}

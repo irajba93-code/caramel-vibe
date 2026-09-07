@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
 import {
   Calendar,
@@ -25,10 +25,38 @@ import {
   Save,
   ShieldCheck,
   Settings,
+  LayoutGrid,
+  List,
+  Users,
+  TrendingUp,
+  AlertTriangle,
+  ArrowRight,
+  BookOpen,
 } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/AdminHeader'
+import { AdminDateFilter, SESSION_DATE_PRESETS } from '@/components/admin/AdminDateFilter'
+import { SortableHeader } from '@/components/admin/SortableHeader'
+import { matchesDateRange, sortItems } from '@/lib/admin/filterUtils'
 import { useAdminMock } from '@/context/AdminMockContext'
 import { AdminCategory, AdminSession, AdminSessionType } from '@/lib/admin/mockData'
+
+// Helper for formatting datetime-local input safely
+const formatForDateTimeInput = (dateStr?: string | null) => {
+  if (!dateStr) return ''
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return ''
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const year = d.getFullYear()
+    const month = pad(d.getMonth() + 1)
+    const day = pad(d.getDate())
+    const hours = pad(d.getHours())
+    const minutes = pad(d.getMinutes())
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  } catch {
+    return dateStr.slice(0, 16)
+  }
+}
 
 export default function AdminSessionsPage() {
   const {
@@ -43,6 +71,8 @@ export default function AdminSessionsPage() {
     sessionTypes,
     addSessionType,
     updateSessionType,
+    bookings,
+    checkInBooking,
     appSettings,
     updateAppSetting,
   } = useAdminMock()
@@ -50,6 +80,27 @@ export default function AdminSessionsPage() {
   const [activeTab, setActiveTab] = useState<'sessions' | 'categories' | 'types' | 'availability'>('sessions')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
+
+  // Date Range Filter State
+  const [datePreset, setDatePreset] = useState('all')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
+  // Column Sorting State
+  const [sortField, setSortField] = useState<string>('start_time')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+
+  // Modals / Drawers State
+  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
+  const [editingSession, setEditingSession] = useState<AdminSession | null>(null)
+  const [viewingSession, setViewingSession] = useState<AdminSession | null>(null)
+  const [deleteConfirmSession, setDeleteConfirmSession] = useState<AdminSession | null>(null)
+
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null)
+  const [typeModalOpen, setTypeModalOpen] = useState(false)
+  const [editingType, setEditingType] = useState<AdminSessionType | null>(null)
 
   // Studio App Settings Form State
   const [settingsForm, setSettingsForm] = useState({
@@ -87,14 +138,6 @@ export default function AdminSessionsPage() {
     }
   }
 
-  // Modals / Drawers State
-  const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
-  const [editingSession, setEditingSession] = useState<AdminSession | null>(null)
-  const [categoryModalOpen, setCategoryModalOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<AdminCategory | null>(null)
-  const [typeModalOpen, setTypeModalOpen] = useState(false)
-  const [editingType, setEditingType] = useState<AdminSessionType | null>(null)
-
   // Form State - Session
   const [sessionForm, setSessionForm] = useState({
     title: '',
@@ -103,9 +146,9 @@ export default function AdminSessionsPage() {
     session_type_id: sessionTypes[0]?.id || '',
     description: '',
     location_type: 'studio',
-    location_address: 'Caramel Vibe Flagship Studio, Suite 402',
+    location_address: appSettings?.studio_address || 'Caramel Vibe Flagship Studio, Suite 402',
     price: 350,
-    currency: 'CAD',
+    currency: (appSettings?.studio_currency as string) || 'CAD',
     max_slots: 6,
     start_time: '2026-09-15T14:00',
     end_time: '2026-09-15T15:30',
@@ -131,7 +174,7 @@ export default function AdminSessionsPage() {
     description: '',
     default_duration_min: 60,
     default_price: 300,
-    currency: 'CAD',
+    currency: (appSettings?.studio_currency as string) || 'CAD',
     image_url: '',
     is_active: true,
   })
@@ -146,12 +189,12 @@ export default function AdminSessionsPage() {
       session_type_id: sessionTypes[0]?.id || '',
       description: '',
       location_type: 'studio',
-      location_address: 'Caramel Vibe Flagship Studio, Suite 402',
+      location_address: appSettings?.studio_address || 'Caramel Vibe Flagship Studio, Suite 402',
       price: 350,
-      currency: 'CAD',
+      currency: (appSettings?.studio_currency as string) || 'CAD',
       max_slots: 6,
-      start_time: '2026-09-15T14:00',
-      end_time: '2026-09-15T15:30',
+      start_time: formatForDateTimeInput(new Date().toISOString()),
+      end_time: formatForDateTimeInput(new Date(Date.now() + 90 * 60000).toISOString()),
       status: 'published',
     })
     setSessionDrawerOpen(true)
@@ -170,28 +213,39 @@ export default function AdminSessionsPage() {
       price: ses.price,
       currency: ses.currency,
       max_slots: ses.max_slots,
-      start_time: ses.start_time.slice(0, 16),
-      end_time: ses.end_time.slice(0, 16),
+      start_time: formatForDateTimeInput(ses.start_time),
+      end_time: formatForDateTimeInput(ses.end_time),
       status: ses.status,
     })
     setSessionDrawerOpen(true)
   }
 
-  const handleSaveSession = (e: React.FormEvent) => {
+  const handleSaveSession = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!sessionForm.title.trim()) return
 
-    const slug = sessionForm.slug.trim() || sessionForm.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const slug =
+      sessionForm.slug.trim() ||
+      sessionForm.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
     if (editingSession) {
-      updateSession(editingSession.id, {
+      await updateSession(editingSession.id, {
         ...sessionForm,
         slug,
         start_time: new Date(sessionForm.start_time).toISOString(),
         end_time: new Date(sessionForm.end_time).toISOString(),
       })
+      if (viewingSession && viewingSession.id === editingSession.id) {
+        setViewingSession({
+          ...viewingSession,
+          ...sessionForm,
+          slug,
+          start_time: new Date(sessionForm.start_time).toISOString(),
+          end_time: new Date(sessionForm.end_time).toISOString(),
+        })
+      }
     } else {
-      addSession({
+      await addSession({
         ...sessionForm,
         slug,
         start_time: new Date(sessionForm.start_time).toISOString(),
@@ -202,6 +256,15 @@ export default function AdminSessionsPage() {
       })
     }
     setSessionDrawerOpen(false)
+  }
+
+  const handleConfirmDeleteSession = async () => {
+    if (!deleteConfirmSession) return
+    await deleteSession(deleteConfirmSession.id)
+    if (viewingSession && viewingSession.id === deleteConfirmSession.id) {
+      setViewingSession(null)
+    }
+    setDeleteConfirmSession(null)
   }
 
   // Handlers for Category Form
@@ -235,7 +298,9 @@ export default function AdminSessionsPage() {
     e.preventDefault()
     if (!categoryForm.name.trim()) return
 
-    const slug = categoryForm.slug.trim() || categoryForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+    const slug =
+      categoryForm.slug.trim() ||
+      categoryForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
     if (editingCategory) {
       updateCategory(editingCategory.id, {
@@ -251,14 +316,62 @@ export default function AdminSessionsPage() {
     setCategoryModalOpen(false)
   }
 
-  // Filtered Sessions
-  const filteredSessions = sessions.filter((ses) => {
-    const matchesStatus = statusFilter === 'all' || ses.status === statusFilter
-    const matchesSearch =
-      ses.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ses.category_name.toLowerCase().includes(searchQuery.toLowerCase())
-    return matchesStatus && matchesSearch
-  })
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      if (['price', 'booked_slots'].includes(field)) {
+        setSortDirection('desc')
+      } else {
+        setSortDirection('asc')
+      }
+    }
+  }
+
+  // Filtered & Sorted Sessions
+  const processedSessions = useMemo(() => {
+    const filtered = sessions.filter((ses) => {
+      const matchesStatus = statusFilter === 'all' || ses.status === statusFilter
+      const matchesSearch =
+        ses.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ses.category_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ses.location_address.toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesDate = matchesDateRange(ses.start_time, datePreset, startDate, endDate)
+      return matchesStatus && matchesSearch && matchesDate
+    })
+
+    return sortItems<AdminSession>(filtered, sortField, sortDirection)
+  }, [sessions, statusFilter, searchQuery, datePreset, startDate, endDate, sortField, sortDirection])
+
+  // Performance KPI Metrics for Sessions Overview
+  const sessionKpis = useMemo(() => {
+    const totalCount = sessions.length
+    const publishedCount = sessions.filter((s) => s.status === 'published' || s.status === 'full').length
+    const fullCount = sessions.filter((s) => s.status === 'full').length
+    const totalMaxSlots = sessions.reduce((sum, s) => sum + (Number(s.max_slots) || 0), 0)
+    const totalBookedSlots = sessions.reduce((sum, s) => sum + (Number(s.booked_slots) || 0), 0)
+    const fillRate = totalMaxSlots > 0 ? Math.round((totalBookedSlots / totalMaxSlots) * 100) : 0
+    const totalGrossVolume = sessions.reduce((sum, s) => sum + (Number(s.price) * (Number(s.booked_slots) || 0)), 0)
+
+    return {
+      totalCount,
+      publishedCount,
+      fullCount,
+      totalMaxSlots,
+      totalBookedSlots,
+      fillRate,
+      totalGrossVolume,
+    }
+  }, [sessions])
+
+  const handleResetFilters = () => {
+    setSearchQuery('')
+    setStatusFilter('all')
+    setDatePreset('all')
+    setStartDate('')
+    setEndDate('')
+  }
 
   // Dynamic Contextual Button based on active tab
   const getContextualAction = () => {
@@ -274,8 +387,14 @@ export default function AdminSessionsPage() {
     }
   }
 
+  // Linked attendees for viewingSession
+  const sessionAttendees = useMemo(() => {
+    if (!viewingSession) return []
+    return bookings.filter((b) => b.session_id === viewingSession.id && b.status !== 'cancelled')
+  }, [viewingSession, bookings])
+
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0 bg-background">
       {/* Admin Header */}
       <AdminHeader
         breadcrumbs={[
@@ -298,7 +417,7 @@ export default function AdminSessionsPage() {
       />
 
       {/* Main Content Area */}
-      <div className="p-6 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 space-y-6 max-w-7xl w-full mx-auto">
         {/* Navigation Tabs */}
         <div className="flex items-center gap-2 border-b border-border pb-1 overflow-x-auto">
           <button
@@ -357,156 +476,455 @@ export default function AdminSessionsPage() {
         {/* TAB 1: SESSIONS MASTER */}
         {activeTab === 'sessions' && (
           <div className="space-y-6">
-            {/* Filter Bar */}
-            <div className="bg-card border border-border rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs">
-              <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter sessions by title or category..."
-                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-background border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+            {/* Executive Snapshot KPI Row for Sessions */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-xs space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Catalog Sessions</span>
+                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="font-display text-2xl md:text-3xl font-bold text-foreground">
+                  {sessionKpis.totalCount}
+                </div>
+                <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <span className="text-[#3e6b48] font-semibold">{sessionKpis.publishedCount} active</span>
+                  <span>• {sessionKpis.fullCount} at full capacity</span>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 self-start sm:self-auto overflow-x-auto w-full sm:w-auto">
-                {['all', 'published', 'full', 'draft', 'completed', 'cancelled'].map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => setStatusFilter(status)}
-                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
-                      statusFilter === status
-                        ? 'bg-primary/10 text-primary border border-primary/30'
-                        : 'bg-background text-muted-foreground border border-border hover:text-foreground'
-                    }`}
-                  >
-                    {status}
-                  </button>
-                ))}
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-xs space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Occupancy Fill Rate</span>
+                  <div className="p-2 rounded-xl bg-accent/15 text-accent">
+                    <Users className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="font-display text-2xl md:text-3xl font-bold text-foreground">
+                  {sessionKpis.fillRate}%
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {sessionKpis.totalBookedSlots} / {sessionKpis.totalMaxSlots} guest slots booked
+                </div>
+              </div>
+
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-xs space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Workshop Volume</span>
+                  <div className="p-2 rounded-xl bg-[#3e6b48]/10 text-[#3e6b48]">
+                    <DollarSign className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="font-display text-2xl md:text-3xl font-bold text-foreground">
+                  ${sessionKpis.totalGrossVolume.toLocaleString()} CAD
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Booked appointment settlement value
+                </div>
+              </div>
+
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-xs space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <span>Service Lines</span>
+                  <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="font-display text-2xl md:text-3xl font-bold text-foreground">
+                  {categories.length}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Across vintage styling &amp; restorations
+                </div>
               </div>
             </div>
 
-            {/* Sessions Table */}
-            <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-border bg-background/70 text-muted-foreground uppercase font-bold tracking-wider text-[10px]">
-                      <th className="py-3.5 px-4">Session &amp; Category</th>
-                      <th className="py-3.5 px-4">Date &amp; Schedule</th>
-                      <th className="py-3.5 px-4">Price</th>
-                      <th className="py-3.5 px-4">Capacity</th>
-                      <th className="py-3.5 px-4">Status</th>
-                      <th className="py-3.5 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {filteredSessions.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-12 text-center text-muted-foreground">
-                          No atelier sessions found matching criteria.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredSessions.map((ses) => {
-                        const percent = Math.round((ses.booked_slots / ses.max_slots) * 100)
-                        return (
-                          <tr key={ses.id} className="hover:bg-muted/30 transition-colors">
-                            <td className="py-4 px-4 space-y-1">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded">
-                                {ses.category_name}
-                              </span>
-                              <div className="font-bold text-foreground text-sm">{ses.title}</div>
-                              <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                <MapPin className="w-3 h-3 text-primary shrink-0" />
-                                <span>{ses.location_address}</span>
-                              </div>
-                            </td>
+            {/* Filter Bar */}
+            <div className="bg-card border border-border rounded-2xl p-5 space-y-4 shadow-xs">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Filter sessions by title, category, location..."
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-background border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
+                  />
+                </div>
 
-                            <td className="py-4 px-4 space-y-0.5">
-                              <div className="font-bold text-foreground">
-                                {new Date(ses.start_time).toLocaleDateString(undefined, {
-                                  weekday: 'short',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                })}
-                              </div>
-                              <div className="text-muted-foreground text-[11px] flex items-center gap-1">
+                <div className="flex items-center gap-2 self-start md:self-auto overflow-x-auto w-full md:w-auto">
+                  {['all', 'published', 'full', 'draft', 'completed', 'cancelled'].map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setStatusFilter(status)}
+                      className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
+                        statusFilter === status
+                          ? 'bg-primary/10 text-primary border border-primary/30 font-bold'
+                          : 'bg-background text-muted-foreground border border-border hover:text-foreground'
+                      }`}
+                    >
+                      {status}
+                    </button>
+                  ))}
+
+                  {/* View Mode Toggle (Table / Grid) */}
+                  <div className="inline-flex items-center p-0.5 rounded-lg bg-background border border-border shadow-xs ml-auto md:ml-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('table')}
+                      title="Table View"
+                      className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                        viewMode === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <List className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('cards')}
+                      title="Grid Cards View"
+                      className={`p-1.5 rounded-md transition-colors cursor-pointer ${
+                        viewMode === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Date Range Filter Bar */}
+              <div className="pt-3 border-t border-border/70 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <AdminDateFilter
+                  preset={datePreset}
+                  onPresetChange={setDatePreset}
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                  onReset={() => {
+                    setDatePreset('all')
+                    setStartDate('')
+                    setEndDate('')
+                  }}
+                  presetOptions={SESSION_DATE_PRESETS}
+                  label="Session Schedule"
+                />
+
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span className="font-semibold text-[11px]">
+                    Showing <strong className="text-foreground">{processedSessions.length}</strong> of{' '}
+                    <strong className="text-foreground">{sessions.length}</strong> sessions
+                  </span>
+                  {(searchQuery || statusFilter !== 'all' || datePreset !== 'all' || startDate || endDate) && (
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
+                    >
+                      Clear all filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Sessions Table View */}
+            {viewMode === 'table' ? (
+              <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-background/70 text-muted-foreground uppercase font-bold tracking-wider text-[10px]">
+                        <SortableHeader
+                          field="title"
+                          currentSortField={sortField}
+                          currentSortDirection={sortDirection}
+                          onSort={handleSort}
+                        >
+                          Session &amp; Category
+                        </SortableHeader>
+
+                        <SortableHeader
+                          field="start_time"
+                          currentSortField={sortField}
+                          currentSortDirection={sortDirection}
+                          onSort={handleSort}
+                        >
+                          Date &amp; Schedule
+                        </SortableHeader>
+
+                        <SortableHeader
+                          field="price"
+                          currentSortField={sortField}
+                          currentSortDirection={sortDirection}
+                          onSort={handleSort}
+                        >
+                          Price
+                        </SortableHeader>
+
+                        <SortableHeader
+                          field="booked_slots"
+                          currentSortField={sortField}
+                          currentSortDirection={sortDirection}
+                          onSort={handleSort}
+                        >
+                          Capacity
+                        </SortableHeader>
+
+                        <SortableHeader
+                          field="status"
+                          currentSortField={sortField}
+                          currentSortDirection={sortDirection}
+                          onSort={handleSort}
+                        >
+                          Status
+                        </SortableHeader>
+
+                        <th className="py-3.5 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {processedSessions.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-muted-foreground">
+                            No atelier sessions found matching criteria.
+                          </td>
+                        </tr>
+                      ) : (
+                        processedSessions.map((ses: AdminSession) => {
+                          const percent = ses.max_slots > 0 ? Math.round((ses.booked_slots / ses.max_slots) * 100) : 0
+                          return (
+                            <tr key={ses.id} className="hover:bg-muted/30 transition-colors">
+                              <td className="py-4 px-4 space-y-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded">
+                                  {ses.category_name}
+                                </span>
+                                <div
+                                  onClick={() => setViewingSession(ses)}
+                                  className="font-bold text-foreground text-sm hover:text-primary cursor-pointer transition-colors"
+                                >
+                                  {ses.title}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-primary shrink-0" />
+                                  <span className="truncate max-w-[200px]">{ses.location_address}</span>
+                                </div>
+                              </td>
+
+                              <td className="py-4 px-4 space-y-0.5">
+                                <div className="font-bold text-foreground">
+                                  {new Date(ses.start_time).toLocaleDateString(undefined, {
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                  })}
+                                </div>
+                                <div className="text-muted-foreground text-[11px] flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-primary" />
+                                  <span>
+                                    {new Date(ses.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
+                                    {new Date(ses.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="py-4 px-4">
+                                <div className="font-bold text-foreground text-sm">
+                                  ${ses.price}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">{ses.currency} / guest</div>
+                              </td>
+
+                              <td className="py-4 px-4 space-y-1 w-36">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-bold text-foreground">
+                                    {ses.booked_slots} / {ses.max_slots}
+                                  </span>
+                                  <span className="text-muted-foreground">{percent}%</span>
+                                </div>
+                                <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className={`h-full transition-all duration-500 ${
+                                      percent >= 100 ? 'bg-destructive' : percent >= 80 ? 'bg-accent' : 'bg-primary'
+                                    }`}
+                                    style={{ width: `${Math.min(100, percent)}%` }}
+                                  />
+                                </div>
+                              </td>
+
+                              <td className="py-4 px-4">
+                                <span
+                                  className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                                    ses.status === 'published'
+                                      ? 'bg-[#3e6b48]/10 text-[#3e6b48] border-[#3e6b48]/30'
+                                      : ses.status === 'full'
+                                      ? 'bg-destructive/10 text-destructive border-destructive/30'
+                                      : ses.status === 'draft'
+                                      ? 'bg-muted text-muted-foreground border-border'
+                                      : 'bg-accent/10 text-accent border-accent/30'
+                                  }`}
+                                >
+                                  {ses.status}
+                                </span>
+                              </td>
+
+                              <td className="py-4 px-4 text-right space-x-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingSession(ses)}
+                                  title="View Session Details & Attendees"
+                                  className="p-1.5 rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-xs active:scale-95"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditSession(ses)}
+                                  title="Edit Session"
+                                  className="p-1.5 rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-primary transition-all cursor-pointer shadow-xs active:scale-95"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmSession(ses)}
+                                  title="Delete Session"
+                                  className="p-1.5 rounded-lg border border-border bg-background hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all cursor-pointer shadow-xs active:scale-95"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              /* Sessions Grid Cards View */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {processedSessions.length === 0 ? (
+                  <div className="col-span-full p-12 text-center rounded-2xl border border-dashed border-border bg-card text-muted-foreground">
+                    No sessions match criteria.
+                  </div>
+                ) : (
+                  processedSessions.map((ses) => {
+                    const percent = ses.max_slots > 0 ? Math.round((ses.booked_slots / ses.max_slots) * 100) : 0
+                    return (
+                      <div
+                        key={ses.id}
+                        className="bg-card border border-border rounded-2xl p-5 shadow-sm hover:border-primary/40 hover:-translate-y-0.5 transition-all space-y-4 flex flex-col justify-between"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/15 px-2.5 py-0.5 rounded-full border border-accent/20">
+                              {ses.category_name}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                ses.status === 'full'
+                                  ? 'bg-destructive/10 text-destructive border-destructive/30'
+                                  : ses.status === 'published'
+                                  ? 'bg-[#3e6b48]/10 text-[#3e6b48] border-[#3e6b48]/30'
+                                  : 'bg-muted text-muted-foreground border-border'
+                              }`}
+                            >
+                              {ses.status}
+                            </span>
+                          </div>
+
+                          <div>
+                            <h4
+                              onClick={() => setViewingSession(ses)}
+                              className="font-display font-bold text-base text-foreground hover:text-primary cursor-pointer transition-colors"
+                            >
+                              {ses.title}
+                            </h4>
+                            <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1">
+                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                              <span className="truncate">{ses.location_address}</span>
+                            </div>
+                          </div>
+
+                          <div className="p-3 rounded-xl bg-background/60 border border-border/60 space-y-2 text-xs">
+                            <div className="flex items-center justify-between text-muted-foreground">
+                              <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3 text-primary" />
                                 <span>
-                                  {new Date(ses.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
-                                  {new Date(ses.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {new Date(ses.start_time).toLocaleDateString(undefined, {
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
                                 </span>
-                              </div>
-                            </td>
+                              </span>
+                              <span className="font-bold text-foreground">
+                                ${ses.price} {ses.currency}
+                              </span>
+                            </div>
 
-                            <td className="py-4 px-4">
-                              <div className="font-bold text-foreground text-sm">
-                                ${ses.price}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">{ses.currency} / guest</div>
-                            </td>
-
-                            <td className="py-4 px-4 space-y-1 w-36">
+                            <div className="space-y-1">
                               <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-muted-foreground">Occupancy</span>
                                 <span className="font-bold text-foreground">
-                                  {ses.booked_slots} / {ses.max_slots}
+                                  {ses.booked_slots} / {ses.max_slots} ({percent}%)
                                 </span>
-                                <span className="text-muted-foreground">{percent}%</span>
                               </div>
                               <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
                                 <div
-                                  className={`h-full ${percent >= 100 ? 'bg-destructive' : 'bg-primary'}`}
-                                  style={{ width: `${percent}%` }}
+                                  className={`h-full ${
+                                    percent >= 100 ? 'bg-destructive' : percent >= 80 ? 'bg-accent' : 'bg-primary'
+                                  }`}
+                                  style={{ width: `${Math.min(100, percent)}%` }}
                                 />
                               </div>
-                            </td>
+                            </div>
+                          </div>
+                        </div>
 
-                            <td className="py-4 px-4">
-                              <span
-                                className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                                  ses.status === 'published'
-                                    ? 'bg-[#3e6b48]/10 text-[#3e6b48] border-[#3e6b48]/30'
-                                    : ses.status === 'full'
-                                    ? 'bg-destructive/10 text-destructive border-destructive/30'
-                                    : ses.status === 'draft'
-                                    ? 'bg-muted text-muted-foreground border-border'
-                                    : 'bg-accent/10 text-accent border-accent/30'
-                                }`}
-                              >
-                                {ses.status}
-                              </span>
-                            </td>
+                        {/* Card Actions */}
+                        <div className="pt-3 border-t border-border/70 flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={() => setViewingSession(ses)}
+                            className="text-xs font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>View Details</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
 
-                            <td className="py-4 px-4 text-right space-x-1">
-                              <button
-                                type="button"
-                                onClick={() => openEditSession(ses)}
-                                title="Edit Session"
-                                className="p-1.5 rounded-lg border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteSession(ses.id)}
-                                title="Delete Session"
-                                className="p-1.5 rounded-lg border border-border bg-background hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openEditSession(ses)}
+                              title="Edit Session"
+                              className="p-2 rounded-xl border border-border bg-background hover:bg-muted text-muted-foreground hover:text-primary transition-all cursor-pointer shadow-xs active:scale-95"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteConfirmSession(ses)}
+                              title="Delete Session"
+                              className="p-2 rounded-xl border border-border bg-background hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all cursor-pointer shadow-xs active:scale-95"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -679,7 +1097,7 @@ export default function AdminSessionsPage() {
                       required
                       value={settingsForm.studio_name}
                       onChange={(e) => setSettingsForm({ ...settingsForm, studio_name: e.target.value })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                     />
                     <p className="text-[10px] text-muted-foreground">Used on receipts and notifications</p>
                   </div>
@@ -693,7 +1111,7 @@ export default function AdminSessionsPage() {
                       required
                       value={settingsForm.studio_address}
                       onChange={(e) => setSettingsForm({ ...settingsForm, studio_address: e.target.value })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                     />
                     <p className="text-[10px] text-muted-foreground">Default physical venue address</p>
                   </div>
@@ -707,7 +1125,7 @@ export default function AdminSessionsPage() {
                       required
                       value={settingsForm.studio_currency}
                       onChange={(e) => setSettingsForm({ ...settingsForm, studio_currency: e.target.value.toUpperCase() })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 uppercase"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs uppercase"
                     />
                     <p className="text-[10px] text-muted-foreground">ISO Currency Code (e.g. CAD, USD, EUR)</p>
                   </div>
@@ -724,7 +1142,7 @@ export default function AdminSessionsPage() {
                         required
                         value={settingsForm.max_booking_days_advance}
                         onChange={(e) => setSettingsForm({ ...settingsForm, max_booking_days_advance: Number(e.target.value) })}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                       />
                       <span className="absolute right-3.5 top-2.5 text-xs text-muted-foreground pointer-events-none">
                         Days
@@ -745,7 +1163,7 @@ export default function AdminSessionsPage() {
                         required
                         value={settingsForm.cancellation_lead_hours}
                         onChange={(e) => setSettingsForm({ ...settingsForm, cancellation_lead_hours: Number(e.target.value) })}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                       />
                       <span className="absolute right-3.5 top-2.5 text-xs text-muted-foreground pointer-events-none">
                         Hours
@@ -809,9 +1227,201 @@ export default function AdminSessionsPage() {
         )}
       </div>
 
+      {/* VIEW SESSION DETAILS DRAWER */}
+      {viewingSession && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-xl bg-card border-l border-border h-full overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl flex flex-col justify-between">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between pb-4 border-b border-border">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/20">
+                    {viewingSession.category_name}
+                  </span>
+                  <h3 className="font-display font-bold text-xl text-foreground mt-1.5">
+                    {viewingSession.title}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingSession(null)}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Status and Key Details */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3.5 rounded-xl bg-background/60 border border-border space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Publication Status
+                  </span>
+                  <div>
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                        viewingSession.status === 'full'
+                          ? 'bg-destructive/10 text-destructive border-destructive/30'
+                          : viewingSession.status === 'published'
+                          ? 'bg-[#3e6b48]/10 text-[#3e6b48] border-[#3e6b48]/30'
+                          : 'bg-muted text-muted-foreground border-border'
+                      }`}
+                    >
+                      {viewingSession.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-xl bg-background/60 border border-border space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Slot Rate
+                  </span>
+                  <div className="font-bold text-foreground text-sm">
+                    ${viewingSession.price} {viewingSession.currency} / guest
+                  </div>
+                </div>
+              </div>
+
+              {/* Schedule and Location */}
+              <div className="p-4 rounded-xl bg-background/60 border border-border space-y-2 text-xs">
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-primary" />
+                    <span className="font-semibold text-foreground">
+                      {new Date(viewingSession.start_time).toLocaleDateString(undefined, {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                  </span>
+                  <span>
+                    {new Date(viewingSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} –{' '}
+                    {new Date(viewingSession.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-muted-foreground pt-1 border-t border-border/60">
+                  <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span>{viewingSession.location_address}</span>
+                </div>
+              </div>
+
+              {/* Live Occupancy Gauge */}
+              <div className="p-4 rounded-xl bg-background/60 border border-border space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-foreground">Attendee Capacity</span>
+                  <span className="font-bold text-primary">
+                    {viewingSession.booked_slots} / {viewingSession.max_slots} slots filled (
+                    {viewingSession.max_slots > 0 ? Math.round((viewingSession.booked_slots / viewingSession.max_slots) * 100) : 0}%)
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{
+                      width: `${
+                        viewingSession.max_slots > 0
+                          ? Math.min(100, Math.round((viewingSession.booked_slots / viewingSession.max_slots) * 100))
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
+              {viewingSession.description && (
+                <div className="space-y-1.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Artisan Agenda &amp; Overview
+                  </h4>
+                  <p className="text-xs text-foreground leading-relaxed p-3.5 rounded-xl bg-background/60 border border-border">
+                    {viewingSession.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Booked Attendees List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-primary" />
+                    <span>Booked Attendees ({sessionAttendees.length})</span>
+                  </h4>
+                </div>
+
+                {sessionAttendees.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-border bg-background/30 text-center text-xs text-muted-foreground">
+                    No reservations booked yet for this session slot.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {sessionAttendees.map((att) => (
+                      <div
+                        key={att.id}
+                        className="p-3 rounded-xl border border-border bg-background/60 flex items-center justify-between text-xs gap-3"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="font-bold text-foreground truncate">{att.client_name}</div>
+                          <div className="text-[11px] text-muted-foreground truncate">{att.client_email}</div>
+                          <div className="text-[10px] text-primary font-mono">{att.booking_number} • {att.slots_booked} seat(s)</div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {att.check_in_time ? (
+                            <span className="text-[10px] font-bold text-[#3e6b48] bg-[#3e6b48]/10 px-2 py-1 rounded-md border border-[#3e6b48]/20 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Checked In</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => checkInBooking(att.id)}
+                              className="px-2.5 py-1 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                            >
+                              Check In
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="pt-4 border-t border-border flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmSession(viewingSession)
+                }}
+                className="px-3.5 py-2 rounded-xl border border-destructive/40 hover:bg-destructive/10 text-destructive text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Session</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  openEditSession(viewingSession)
+                }}
+                className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs flex items-center gap-1.5 active:scale-95"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit Session</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CREATE / EDIT SESSION DRAWER */}
       {sessionDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in">
           <div className="w-full max-w-xl bg-card border-l border-border h-full overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-border">
@@ -844,7 +1454,7 @@ export default function AdminSessionsPage() {
                     value={sessionForm.title}
                     onChange={(e) => setSessionForm({ ...sessionForm, title: e.target.value })}
                     placeholder="e.g. Hermès Kelly Leather Workshop"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                   />
                 </div>
 
@@ -856,7 +1466,7 @@ export default function AdminSessionsPage() {
                   <select
                     value={sessionForm.category_name}
                     onChange={(e) => setSessionForm({ ...sessionForm, category_name: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                   >
                     {categories.map((c) => (
                       <option key={c.id} value={c.name}>
@@ -877,7 +1487,7 @@ export default function AdminSessionsPage() {
                       required
                       value={sessionForm.start_time}
                       onChange={(e) => setSessionForm({ ...sessionForm, start_time: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                     />
                   </div>
                   <div className="space-y-1">
@@ -889,7 +1499,7 @@ export default function AdminSessionsPage() {
                       required
                       value={sessionForm.end_time}
                       onChange={(e) => setSessionForm({ ...sessionForm, end_time: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3 py-2 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                     />
                   </div>
                 </div>
@@ -898,7 +1508,7 @@ export default function AdminSessionsPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-bold uppercase tracking-wider text-foreground">
-                      Price ($ CAD)
+                      Price ($ {sessionForm.currency})
                     </label>
                     <input
                       type="number"
@@ -906,7 +1516,7 @@ export default function AdminSessionsPage() {
                       min={0}
                       value={sessionForm.price}
                       onChange={(e) => setSessionForm({ ...sessionForm, price: Number(e.target.value) })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                     />
                   </div>
                   <div className="space-y-1">
@@ -920,7 +1530,7 @@ export default function AdminSessionsPage() {
                       max={50}
                       value={sessionForm.max_slots}
                       onChange={(e) => setSessionForm({ ...sessionForm, max_slots: Number(e.target.value) })}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                     />
                   </div>
                 </div>
@@ -935,7 +1545,7 @@ export default function AdminSessionsPage() {
                     required
                     value={sessionForm.location_address}
                     onChange={(e) => setSessionForm({ ...sessionForm, location_address: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                   />
                 </div>
 
@@ -949,7 +1559,7 @@ export default function AdminSessionsPage() {
                     onChange={(e) =>
                       setSessionForm({ ...sessionForm, status: e.target.value as AdminSession['status'] })
                     }
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                   >
                     <option value="published">Published (Live Catalog)</option>
                     <option value="draft">Draft (Private)</option>
@@ -969,7 +1579,7 @@ export default function AdminSessionsPage() {
                     value={sessionForm.description}
                     onChange={(e) => setSessionForm({ ...sessionForm, description: e.target.value })}
                     placeholder="Details about master artisan techniques, materials provided, etc."
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                   />
                 </div>
 
@@ -977,13 +1587,13 @@ export default function AdminSessionsPage() {
                   <button
                     type="button"
                     onClick={() => setSessionDrawerOpen(false)}
-                    className="px-4 py-2.5 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground cursor-pointer shadow-xs"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all cursor-pointer shadow-sm"
+                    className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all cursor-pointer shadow-sm active:scale-95"
                   >
                     {editingSession ? 'Save Changes' : 'Publish Session'}
                   </button>
@@ -994,9 +1604,77 @@ export default function AdminSessionsPage() {
         </div>
       )}
 
+      {/* DELETE SESSION CONFIRMATION MODAL */}
+      {deleteConfirmSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="w-full max-w-md bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-5">
+            <div className="flex items-center gap-3 text-destructive">
+              <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20">
+                <AlertTriangle className="w-6 h-6 text-destructive" />
+              </div>
+              <div>
+                <h3 className="font-display font-bold text-lg text-foreground">
+                  Delete Atelier Session?
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  This action removes the session from the public catalog.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-background/60 border border-border space-y-2 text-xs">
+              <div className="font-bold text-foreground">{deleteConfirmSession.title}</div>
+              <div className="text-muted-foreground flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-primary" />
+                <span>
+                  {new Date(deleteConfirmSession.start_time).toLocaleDateString(undefined, {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}{' '}
+                  • {new Date(deleteConfirmSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="text-muted-foreground flex items-center justify-between pt-1 border-t border-border/60">
+                <span>Current Bookings:</span>
+                <span className="font-bold text-foreground">
+                  {deleteConfirmSession.booked_slots} / {deleteConfirmSession.max_slots} slots
+                </span>
+              </div>
+            </div>
+
+            {deleteConfirmSession.booked_slots > 0 && (
+              <div className="p-3.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p className="leading-snug">
+                  <strong>Warning:</strong> This session has <strong>{deleteConfirmSession.booked_slots} booked attendee(s)</strong>. Deleting it will remove the appointment from active schedules.
+                </p>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-border flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmSession(null)}
+                className="px-4 py-2 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground cursor-pointer shadow-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSession}
+                className="px-5 py-2 rounded-xl bg-destructive hover:bg-destructive/90 text-destructive-foreground text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CREATE / EDIT CATEGORY MODAL */}
       {categoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
           <div className="w-full max-w-lg bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <h3 className="font-display font-bold text-lg text-foreground">
@@ -1022,7 +1700,7 @@ export default function AdminSessionsPage() {
                   value={categoryForm.name}
                   onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
                   placeholder="e.g. VIP Private Viewings"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                 />
               </div>
 
@@ -1036,7 +1714,7 @@ export default function AdminSessionsPage() {
                   value={categoryForm.description}
                   onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
                   placeholder="Overview of this service tier..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                 />
               </div>
 
@@ -1049,7 +1727,7 @@ export default function AdminSessionsPage() {
                   required
                   value={categoryForm.image_url}
                   onChange={(e) => setCategoryForm({ ...categoryForm, image_url: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                 />
               </div>
 
@@ -1063,7 +1741,7 @@ export default function AdminSessionsPage() {
                     min={1}
                     value={categoryForm.display_order}
                     onChange={(e) => setCategoryForm({ ...categoryForm, display_order: Number(e.target.value) })}
-                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-sm text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary shadow-xs"
                   />
                 </div>
 
@@ -1085,13 +1763,13 @@ export default function AdminSessionsPage() {
                 <button
                   type="button"
                   onClick={() => setCategoryModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground cursor-pointer"
+                  className="px-4 py-2 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground cursor-pointer shadow-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all cursor-pointer shadow-xs"
+                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all cursor-pointer shadow-xs active:scale-95"
                 >
                   {editingCategory ? 'Update Category' : 'Create Category'}
                 </button>

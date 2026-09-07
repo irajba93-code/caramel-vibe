@@ -97,6 +97,32 @@ export interface AdminNotification {
   timestamp: string
 }
 
+export interface AdminActivity {
+  id: string
+  actor_type: 'admin' | 'client'
+  actor_name: string
+  actor_email: string
+  actor_avatar?: string | null
+  action_type:
+    | 'booking_created'
+    | 'booking_checked_in'
+    | 'booking_cancelled'
+    | 'payment_updated'
+    | 'session_created'
+    | 'session_updated'
+    | 'client_registered'
+    | 'client_status_changed'
+    | 'client_profile_updated'
+    | 'setting_updated'
+    | 'category_created'
+  title: string
+  description: string
+  target_id?: string
+  target_label?: string
+  timestamp: string
+  created_at: string
+}
+
 export interface KpiMetric {
   title: string
   value: string | number
@@ -725,3 +751,133 @@ export const KPI_DATA: Record<string, KpiMetric[]> = {
     },
   ],
 }
+
+export const INITIAL_ACTIVITIES: AdminActivity[] = [
+  {
+    id: 'act-1',
+    actor_type: 'client',
+    actor_name: 'Genevieve Laurent',
+    actor_email: 'genevieve.laurent@parisien.fr',
+    actor_avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+    action_type: 'booking_created',
+    title: 'New Reservation Placed',
+    description: 'Reserved 1 slot for "Autumn Bespoke Handbag & Archival Silk Styling Consultation" ($350 CAD).',
+    target_id: 'bk-104',
+    target_label: 'CV-2026-0894',
+    timestamp: '15 minutes ago',
+    created_at: '2026-09-07T19:05:00Z',
+  },
+  {
+    id: 'act-2',
+    actor_type: 'admin',
+    actor_name: 'Atelier Director',
+    actor_email: 'admin@caramelvibe.com',
+    actor_avatar: null,
+    action_type: 'booking_checked_in',
+    title: 'Guest Attendance Checked In',
+    description: 'Confirmed in-person arrival and workstation onboarding for booking CV-2026-0891.',
+    target_id: 'bk-101',
+    target_label: 'CV-2026-0891',
+    timestamp: '42 minutes ago',
+    created_at: '2026-09-07T18:38:00Z',
+  },
+  {
+    id: 'act-3',
+    actor_type: 'client',
+    actor_name: 'Arthur Pendelton',
+    actor_email: 'arthur.pendelton@montreal.ca',
+    actor_avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
+    action_type: 'booking_created',
+    title: 'Dual-Seat Workshop Booking',
+    description: 'Reserved 2 seats for "Hermès Kelly & Birkin Patina Restoration Workshop" ($900 CAD).',
+    target_id: 'bk-102',
+    target_label: 'CV-2026-0892',
+    timestamp: '2 hours ago',
+    created_at: '2026-09-07T17:20:00Z',
+  },
+  {
+    id: 'act-4',
+    actor_type: 'admin',
+    actor_name: 'Atelier Director',
+    actor_email: 'admin@caramelvibe.com',
+    actor_avatar: null,
+    action_type: 'session_created',
+    title: 'New Studio Session Published',
+    description: 'Scheduled "Private Trunk Show & Custom Monogram Preview" for September 18.',
+    target_id: 'ses-4',
+    target_label: 'Private Trunk Show',
+    timestamp: '4 hours ago',
+    created_at: '2026-09-07T15:15:00Z',
+  },
+  {
+    id: 'act-5',
+    actor_type: 'client',
+    actor_name: 'Claire Beauchamp',
+    actor_email: 'claire.beauchamp@luxuryvault.ca',
+    actor_avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=400&q=80',
+    action_type: 'client_registered',
+    title: 'New Member Account Created',
+    description: 'Completed atelier member registration and email verification.',
+    target_id: 'usr-104',
+    target_label: 'Claire Beauchamp',
+    timestamp: 'Yesterday at 4:30 PM',
+    created_at: '2026-09-06T16:30:00Z',
+  },
+  {
+    id: 'act-6',
+    actor_type: 'admin',
+    actor_name: 'Atelier Director',
+    actor_email: 'admin@caramelvibe.com',
+    actor_avatar: null,
+    action_type: 'payment_updated',
+    title: 'On-Premise Payment Settlement',
+    description: 'Recorded $450 CAD boutique terminal settlement for Genevieve Laurent.',
+    target_id: 'bk-101',
+    target_label: 'CV-2026-0891',
+    timestamp: 'Yesterday at 5:15 PM',
+    created_at: '2026-09-06T17:15:00Z',
+  },
+  {
+    id: 'act-7',
+    actor_type: 'admin',
+    actor_name: 'Atelier Director',
+    actor_email: 'admin@caramelvibe.com',
+    actor_avatar: null,
+    action_type: 'setting_updated',
+    title: 'Studio Parameters Updated',
+    description: 'Adjusted maximum advance reservation window to 30 calendar days.',
+    target_id: 'max_booking_days_advance',
+    target_label: 'App Settings',
+    timestamp: '2 days ago',
+    created_at: '2026-09-05T11:00:00Z',
+  },
+  {
+    id: 'act-8',
+    actor_type: 'client',
+    actor_name: 'Vivienne Vance',
+    actor_email: 'vivienne.vance@atelier-v.com',
+    actor_avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=80',
+    action_type: 'booking_created',
+    title: 'VIP Vault Soirée Reservation',
+    description: 'Secured exclusive viewing seat for "Vintage Chanel 1980s–1990s 24K Gold Hardware Vault Salon" ($600 CAD).',
+    target_id: 'bk-103',
+    target_label: 'CV-2026-0893',
+    timestamp: '2 days ago',
+    created_at: '2026-09-05T14:40:00Z',
+  },
+  {
+    id: 'act-9',
+    actor_type: 'admin',
+    actor_name: 'Atelier Director',
+    actor_email: 'admin@caramelvibe.com',
+    actor_avatar: null,
+    action_type: 'client_status_changed',
+    title: 'Client Moderation Action',
+    description: 'Restricted account access for Marcus Rossi due to repeated session no-shows without notice.',
+    target_id: 'usr-105',
+    target_label: 'Marcus Rossi',
+    timestamp: '3 days ago',
+    created_at: '2026-09-04T10:10:00Z',
+  },
+]
+

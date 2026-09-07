@@ -17,6 +17,9 @@ import {
   Users,
   BookOpen,
   Plus,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
 import { useAdminMock } from '@/context/AdminMockContext'
@@ -44,7 +47,14 @@ export function AdminHeader({
   const router = useRouter()
   const { showToast } = useToast()
   const supabase = createClient()
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useAdminMock()
+  const {
+    notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+    isSidebarCollapsed,
+    toggleSidebar,
+    toggleMobileDrawer,
+  } = useAdminMock()
 
   const [profile, setProfile] = useState<Profile | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -100,32 +110,61 @@ export function AdminHeader({
   }
 
   return (
-    <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-30 px-6 py-4">
+    <header className="border-b border-border bg-card/90 backdrop-blur-md sticky top-0 z-30 px-4 md:px-6 py-3.5 md:py-4">
       {/* Top Row: Breadcrumbs & Header Controls */}
-      <div className="flex items-center justify-between gap-4">
-        {/* Breadcrumbs Navigation in Small Text */}
-        <nav className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          {breadcrumbs.map((crumb, idx) => {
-            const isLast = idx === breadcrumbs.length - 1
-            return (
-              <React.Fragment key={crumb.label}>
-                {idx > 0 && <span className="text-border">/</span>}
-                {crumb.href && !isLast ? (
-                  <Link
-                    href={crumb.href}
-                    className="hover:text-primary transition-colors font-medium"
-                  >
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <span className={isLast ? 'text-foreground font-semibold' : ''}>
-                    {crumb.label}
-                  </span>
-                )}
-              </React.Fragment>
-            )
-          })}
-        </nav>
+      <div className="flex items-center justify-between gap-3 md:gap-4">
+        {/* Left: Sidebar Collapse/Expand Triggers (Mobile & Desktop) + Breadcrumbs */}
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Mobile Hamburger Trigger (md:hidden) - Outside Drawer */}
+          <button
+            type="button"
+            onClick={toggleMobileDrawer}
+            title="Open navigation drawer"
+            aria-label="Open mobile navigation drawer"
+            className="md:hidden p-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground transition-all cursor-pointer flex items-center justify-center shrink-0 shadow-xs active:scale-95"
+          >
+            <Menu className="w-4 h-4 text-foreground" />
+          </button>
+
+          {/* Desktop Sidebar Collapse/Expand Trigger (hidden md:flex) - Outside Sidebar */}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            title={isSidebarCollapsed ? 'Expand sidebar menu' : 'Collapse sidebar menu'}
+            aria-label={isSidebarCollapsed ? 'Expand sidebar menu' : 'Collapse sidebar menu'}
+            className="hidden md:flex p-2 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all cursor-pointer items-center justify-center shrink-0 shadow-xs active:scale-95 group"
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:scale-110 transition-transform" />
+            )}
+          </button>
+
+          {/* Breadcrumbs Navigation in Small Text */}
+          <nav className="flex items-center gap-1.5 text-xs text-muted-foreground overflow-x-auto no-scrollbar py-0.5">
+            {breadcrumbs.map((crumb, idx) => {
+              const isLast = idx === breadcrumbs.length - 1
+              return (
+                <React.Fragment key={crumb.label}>
+                  {idx > 0 && <span className="text-border shrink-0">/</span>}
+                  {crumb.href && !isLast ? (
+                    <Link
+                      href={crumb.href}
+                      className="hover:text-primary transition-colors font-medium whitespace-nowrap"
+                    >
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <span className={isLast ? 'text-foreground font-semibold whitespace-nowrap' : 'whitespace-nowrap'}>
+                      {crumb.label}
+                    </span>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </nav>
+        </div>
 
         {/* Right Controls: Contextual Action, Notifications & Root Profile Dropdown */}
         <div className="flex items-center gap-3">
