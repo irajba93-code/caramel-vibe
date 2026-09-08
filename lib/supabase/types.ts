@@ -43,6 +43,7 @@ export interface SessionType {
   name: string
   slug: string
   description: string | null
+  capacity: number | null
   default_duration_min: number
   default_price: number
   currency: string

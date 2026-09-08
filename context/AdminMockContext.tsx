@@ -49,6 +49,7 @@ interface AdminMockContextType {
   sessionTypes: AdminSessionType[]
   addSessionType: (st: Omit<AdminSessionType, 'id' | 'created_at'>) => Promise<void>
   updateSessionType: (id: string, st: Partial<AdminSessionType>) => Promise<void>
+  deleteSessionType: (id: string) => Promise<void>
 
   // Clients
   clients: AdminClient[]
@@ -170,6 +171,7 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
           name: st.name,
           slug: st.slug,
           description: st.description || '',
+          capacity: st.capacity !== undefined && st.capacity !== null ? Number(st.capacity) : null,
           default_duration_min: st.default_duration_min,
           default_price: Number(st.default_price),
           currency: st.currency,
@@ -275,29 +277,41 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         setClients(mappedClients)
       }
 
-      // 5. Map Sessions
+      // 5. Map Sessions with Live Bookings Aggregation
       if (dbSessions && dbSessions.length > 0) {
-        const mappedSessions: AdminSession[] = dbSessions.map((s: Session) => ({
-          id: s.id,
-          session_type_id: s.session_type_id || '',
-          category_name: 'Atelier Workshop',
-          title: s.title,
-          slug: s.slug,
-          description: s.description || '',
-          location_type: s.location_type,
-          location_address: s.location_address,
-          price: Number(s.price),
-          currency: s.currency,
-          max_slots: s.max_slots,
-          booked_slots: s.booked_slots,
-          start_time: s.start_time,
-          end_time: s.end_time,
-          is_ongoing: s.is_ongoing,
-          status: s.status as AdminSession['status'],
-          cancel_reason: s.cancel_reason,
-          cancelled_at: s.cancelled_at,
-          created_at: s.created_at,
-        }))
+        const mappedSessions: AdminSession[] = dbSessions.map((s: Session) => {
+          const sessionBookings = dbBookings
+            ? dbBookings.filter((b: Booking) => b.session_id === s.id && b.status !== 'cancelled')
+            : []
+          const liveBooked =
+            sessionBookings.length > 0
+              ? sessionBookings.reduce((sum: number, b: Booking) => sum + (Number(b.slots_booked) || 1), 0)
+              : Number(s.booked_slots) || 0
+
+          return {
+            id: s.id,
+            session_type_id: s.session_type_id || '',
+            category_name: 'Atelier Workshop',
+            title: s.title,
+            slug: s.slug,
+            description: s.description || '',
+            location_type: s.location_type,
+            location_address: s.location_address,
+            price: Number(s.price),
+            currency: s.currency,
+            max_slots: s.max_slots,
+            booked_slots: liveBooked,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            is_ongoing: s.is_ongoing,
+            status: (liveBooked >= s.max_slots && s.status === 'published'
+              ? 'full'
+              : s.status) as AdminSession['status'],
+            cancel_reason: s.cancel_reason,
+            cancelled_at: s.cancelled_at,
+            created_at: s.created_at,
+          }
+        })
         setSessions(mappedSessions)
       }
 
@@ -701,12 +715,18 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
   // Session Type Actions
   const addSessionType = async (st: Omit<AdminSessionType, 'id' | 'created_at'>) => {
     try {
+      const parsedCapacity =
+        st.capacity !== undefined && st.capacity !== null && String(st.capacity).trim() !== ''
+          ? Number(st.capacity)
+          : null
+
       const { data, error } = await supabase
         .from('session_types')
         .insert({
           name: st.name,
           slug: st.slug,
           description: st.description,
+          capacity: parsedCapacity,
           default_duration_min: st.default_duration_min,
           default_price: st.default_price,
           currency: st.currency,
@@ -727,6 +747,7 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         name: data.name,
         slug: data.slug,
         description: data.description || '',
+        capacity: data.capacity !== undefined && data.capacity !== null ? Number(data.capacity) : null,
         default_duration_min: data.default_duration_min,
         default_price: Number(data.default_price),
         currency: data.currency,
@@ -744,21 +765,57 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
 
   const updateSessionType = async (id: string, st: Partial<AdminSessionType>) => {
     try {
+      const payload: Record<string, any> = {
+        ...st,
+        updated_at: new Date().toISOString(),
+      }
+      if ('capacity' in st) {
+        payload.capacity =
+          st.capacity !== undefined && st.capacity !== null && String(st.capacity).trim() !== ''
+            ? Number(st.capacity)
+            : null
+      }
+
       const { error } = await supabase
         .from('session_types')
-        .update({
-          ...st,
-          updated_at: new Date().toISOString(),
-        })
+        .update(payload)
         .eq('id', id)
 
       if (error) throw error
 
-      setSessionTypes((prev) => prev.map((item) => (item.id === id ? { ...item, ...st } : item)))
+      setSessionTypes((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                ...st,
+                capacity:
+                  'capacity' in st
+                    ? st.capacity !== undefined && st.capacity !== null && String(st.capacity).trim() !== ''
+                      ? Number(st.capacity)
+                      : null
+                    : item.capacity,
+              }
+            : item
+        )
+      )
       showToast('Template updated.', 'success')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Update failed'
       showToast(`Error updating template: ${msg}`, 'error')
+    }
+  }
+
+  const deleteSessionType = async (id: string) => {
+    try {
+      const { error } = await supabase.from('session_types').delete().eq('id', id)
+      if (error) throw error
+
+      setSessionTypes((prev) => prev.filter((item) => item.id !== id))
+      showToast('Session template removed.', 'info')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete template'
+      showToast(`Error deleting template: ${msg}`, 'error')
     }
   }
 
@@ -911,19 +968,38 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
       setBookings((prev) => [newBk, ...prev])
 
       // Increment session booked slots locally and in DB
+      const targetSession = sessions.find((s) => s.id === booking.session_id)
+      const currentBooked = targetSession ? Number(targetSession.booked_slots) || 0 : 0
+      const newBooked = currentBooked + (Number(booking.slots_booked) || 1)
+      const isFull = targetSession ? newBooked >= targetSession.max_slots : false
+
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id === booking.session_id) {
-            const newBooked = s.booked_slots + booking.slots_booked
             return {
               ...s,
               booked_slots: newBooked,
-              status: newBooked >= s.max_slots ? 'full' : s.status,
+              status: (isFull && s.status === 'published' ? 'full' : s.status) as AdminSession['status'],
             }
           }
           return s
         })
       )
+
+      if (targetSession) {
+        try {
+          await supabase
+            .from('sessions')
+            .update({
+              booked_slots: newBooked,
+              status: isFull && targetSession.status === 'published' ? 'full' : targetSession.status,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', booking.session_id)
+        } catch (dbErr) {
+          console.warn('Failed to update sessions table booked_slots in Supabase:', dbErr)
+        }
+      }
 
       showToast(`Booking ${bookingNumber} recorded successfully.`, 'success')
     } catch {
@@ -936,6 +1012,21 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         created_at: new Date().toISOString(),
       }
       setBookings((prev) => [newBk, ...prev])
+
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id === booking.session_id) {
+            const newBooked = (Number(s.booked_slots) || 0) + (Number(booking.slots_booked) || 1)
+            return {
+              ...s,
+              booked_slots: newBooked,
+              status: (newBooked >= s.max_slots && s.status === 'published' ? 'full' : s.status) as AdminSession['status'],
+            }
+          }
+          return s
+        })
+      )
+
       showToast(`Booking ${bookingNumber} recorded.`, 'success')
     }
   }
@@ -1050,10 +1141,13 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
       )
 
       if (target) {
+        const targetSession = sessions.find((s) => s.id === target.session_id)
+        const currentBooked = targetSession ? Number(targetSession.booked_slots) || 0 : 0
+        const newBooked = Math.max(0, currentBooked - (Number(target.slots_booked) || 1))
+
         setSessions((prev) =>
           prev.map((s) => {
             if (s.id === target.session_id) {
-              const newBooked = Math.max(0, s.booked_slots - target.slots_booked)
               return {
                 ...s,
                 booked_slots: newBooked,
@@ -1063,6 +1157,21 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
             return s
           })
         )
+
+        if (targetSession) {
+          try {
+            await supabase
+              .from('sessions')
+              .update({
+                booked_slots: newBooked,
+                status: targetSession.status === 'full' ? 'published' : targetSession.status,
+                updated_at: nowIso,
+              })
+              .eq('id', target.session_id)
+          } catch (dbErr) {
+            console.warn('Failed to update sessions table booked_slots in Supabase:', dbErr)
+          }
+        }
       }
 
       addActivity({
@@ -1146,6 +1255,7 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         sessionTypes,
         addSessionType,
         updateSessionType,
+        deleteSessionType,
         clients,
         addClient,
         updateClient,

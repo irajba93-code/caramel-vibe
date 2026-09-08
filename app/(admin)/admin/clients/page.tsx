@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Users,
   Search,
@@ -88,6 +88,20 @@ export default function AdminClientsPage() {
     phone: '',
     role: 'client' as AdminClient['role'],
   })
+
+  // Global Escape key listener to dismiss any active drawer or modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDossierOpen(false)
+        setEditModalOpen(false)
+        setBanModalOpen(false)
+        setInviteModalOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // Helper to check if a client row is the current authenticated user
   const checkIsSelf = (client: AdminClient) => {
@@ -548,8 +562,14 @@ export default function AdminClientsPage() {
 
       {/* CLIENT DOSSIER SLIDE-OVER DRAWER */}
       {dossierOpen && selectedClient && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-xl bg-card border-l border-border h-full overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl flex flex-col justify-between">
+        <div
+          onClick={() => setDossierOpen(false)}
+          className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs animate-in fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xl bg-card border-l border-border h-full overflow-y-auto p-6 md:p-8 space-y-6 shadow-2xl flex flex-col justify-between cursor-default"
+          >
             <div className="space-y-6">
               {/* Top Header */}
               <div className="flex items-center justify-between pb-4 border-b border-border">
@@ -756,8 +776,14 @@ export default function AdminClientsPage() {
 
       {/* EDIT CLIENT MODAL */}
       {editModalOpen && editingClient && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-lg bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-5">
+        <div
+          onClick={() => setEditModalOpen(false)}
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-5 cursor-default"
+          >
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <div className="flex items-center gap-2">
                 <Edit2 className="w-4 h-4 text-primary" />
@@ -914,8 +940,14 @@ export default function AdminClientsPage() {
 
       {/* BAN CLIENT REASON MODAL */}
       {banModalOpen && selectedClient && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-md bg-card border border-destructive/40 rounded-2xl p-6 shadow-2xl space-y-4">
+        <div
+          onClick={() => setBanModalOpen(false)}
+          className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-card border border-destructive/40 rounded-2xl p-6 shadow-2xl space-y-4 cursor-default"
+          >
             <div className="flex items-center gap-2 text-destructive font-bold text-base">
               <ShieldAlert className="w-5 h-5" />
               <span>Suspend Client Account</span>
@@ -962,8 +994,14 @@ export default function AdminClientsPage() {
 
       {/* INVITE CLIENT MODAL */}
       {inviteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="w-full max-w-lg bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-4">
+        <div
+          onClick={() => setInviteModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-card border border-border rounded-2xl p-6 shadow-2xl space-y-4 cursor-default"
+          >
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <h3 className="font-display font-bold text-lg text-foreground">
                 Register New Client Profile
