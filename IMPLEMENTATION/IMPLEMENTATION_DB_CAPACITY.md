@@ -1,0 +1,146 @@
+# Implementation Plan: Session Type Capacity, Auto-Fill & Enhanced Table/Drawer Interactions
+
+**Document**: `IMPLEMENTATION_DB_CAPACITY.md`  
+**GitHub Tracking Issue**: [#9](https://github.com/irajba93-code/caramel-vibe/issues/9)  
+**Git Branch**: `feat/session-type-capacity-and-drawer-enhancements`  
+**Status**: Ready for Execution  
+
+---
+
+## 1. Executive Summary & User Story
+
+As an Atelier Administrator for Caramel Vibe, when defining reusable session types (templates), we need the ability to specify a default **Capacity** (number of guest slots) and **Description** so that when scheduling a new master session, selecting a session type automatically populates the capacity.
+
+Furthermore, we need our admin tables and interactive sheets (drawers) enhanced with:
+1. **Session Types UI Table**: Displaying `Description` (after title) and `Capacity` columns.
+2. **Master Active Sessions Table**: Displaying a `Description` column after the session title/category.
+3. **Interactive Table Rows & Category Cards**: Clicking anywhere on a table row or category item (`cursor-pointer`) opens the right-side details/edit drawer (Sheet).
+4. **Accessible Sheet Overlay & Dismissal**: Full backdrop overlay (`fixed inset-0 bg-black/50 backdrop-blur-xs`), clicking outside the drawer onto the blurred/darkened backdrop closes the drawer, pressing the `Escape` key closes the drawer, and clicking the `X` icon closes the drawer.
+
+---
+
+## 2. Database Schema & Supabase Architecture
+
+```mermaid
+erDiagram
+    CATEGORIES ||--o{ SESSION_TYPES : "contains"
+    SESSION_TYPES ||--o{ SESSIONS : "templates"
+    SESSIONS ||--o{ BOOKINGS : "books"
+
+    SESSION_TYPES {
+        uuid id PK
+        uuid category_id FK
+        text name
+        text slug
+        text description
+        integer capacity "New column (default guest slots)"
+        integer default_duration_min
+        numeric default_price
+        text currency
+        text category
+        text image_url
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SESSIONS {
+        uuid id PK
+        uuid session_type_id FK
+        text title
+        text slug
+        text description "Editable in session drawer & shown in table"
+        text location_type
+        text location_address
+        numeric price
+        text currency
+        integer max_slots "Auto-filled from session_types.capacity"
+        integer booked_slots
+        timestamptz start_time
+        timestamptz end_time
+        session_status status
+    }
+```
+
+### Database Migration Details
+- Add column `capacity` (`integer`, nullable) to `public.session_types`:
+  ```sql
+  ALTER TABLE public.session_types ADD COLUMN IF NOT EXISTS capacity integer;
+  ```
+- Seed existing template records with baseline capacities (e.g. 1, 6, 8) to maintain data consistency.
+
+---
+
+## 3. Implementation Checklist & Progress Tracker
+
+### Phase 1: Database & Model Synchronization
+- [ ] **1.1 Supabase Schema Migration**
+  - [ ] Execute `ALTER TABLE public.session_types ADD COLUMN IF NOT EXISTS capacity integer;` via Supabase MCP.
+  - [ ] Verify column addition via `list_tables`.
+- [ ] **1.2 TypeScript Definitions**
+  - [ ] Update `SessionType` in `lib/supabase/types.ts` to include `capacity: number | null`.
+  - [ ] Update `AdminSessionType` in `lib/admin/mockData.ts` to include `capacity?: number | null`.
+  - [ ] Update `INITIAL_SESSION_TYPES` in `lib/admin/mockData.ts` with initial capacity values.
+- [ ] **1.3 Data Context Operations (`AdminMockContext.tsx`)**
+  - [ ] Update Supabase fetch query mapping for `session_types` to extract `capacity`.
+  - [ ] Update `addSessionType` to pass `capacity` to Supabase `insert` payload and state.
+  - [ ] Update `updateSessionType` to persist `capacity` in Supabase `update` payload and state.
+
+---
+
+### Phase 2: Session Types (Templates) UI & Modals
+- [ ] **2.1 Session Type Create / Edit Modal (`app/(admin)/admin/sessions/page.tsx`)**
+  - [ ] Implement full Create / Edit Session Type modal dialog with backdrop and escape handling.
+  - [ ] Add `Capacity (Default Guests)` input field:
+    - Default empty (`""` / `null`) on Create.
+    - Pre-filled with `st.capacity` on Edit.
+  - [ ] Include Category selector, Title, Slug, Description, Duration, Price, Currency, Image URL, and Active status.
+- [ ] **2.2 Session Types Template UI Table**
+  - [ ] Implement a rich structured data table under `activeTab === 'types'`.
+  - [ ] Add `Description` column directly after the Session Name/Title.
+  - [ ] Add `Capacity` column displaying guest count (e.g., `6 guests` or `—`).
+  - [ ] Add `Duration`, `Category`, `Default Price`, `Status`, and `Actions` columns.
+  - [ ] Make entire table rows and cards clickable (`cursor-pointer`) to open the edit modal/drawer.
+
+---
+
+### Phase 3: Master Sessions Table & Scheduling Auto-Fill
+- [ ] **3.1 Session Scheduling Drawer (`openCreateSession`)**
+  - [ ] Ensure `Session Type` selector is present and synced.
+  - [ ] When a session type is selected from the dropdown, automatically pre-fill `max_slots` (Capacity) with `selectedType.capacity`.
+  - [ ] Ensure `description` field is prominent and editable during session creation.
+- [ ] **3.2 Session Edit Drawer (`openEditSession`)**
+  - [ ] Ensure `description` field is loaded and editable.
+  - [ ] Allow manual adjustments to capacity (`max_slots`) if needed.
+- [ ] **3.3 Master Active Sessions Table UI**
+  - [ ] Add `Description` column directly following the `Session & Category` column.
+  - [ ] Style description with elegant line-clamp/truncation (`text-muted-foreground text-xs`).
+  - [ ] Make the entire `<tr>` row clickable with `cursor-pointer` to open the right-side viewing/details Sheet drawer.
+  - [ ] Add `e.stopPropagation()` on all inline action buttons (Pencil Edit, Eye View, Trash Delete) to preserve granular button interactions.
+- [ ] **3.4 Service Categories Interaction**
+  - [ ] Ensure Category cards/rows are clickable (`cursor-pointer`) to open the category edit modal.
+
+---
+
+### Phase 4: Sheet Drawer Backdrop Overlay & Dismissal Controls
+- [ ] **4.1 Full Backdrop Overlay**
+  - [ ] Ensure all drawers (`viewingSession` drawer, `sessionDrawerOpen` drawer) render with a full backdrop overlay (`fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex justify-end`).
+- [ ] **4.2 Click Outside to Dismiss**
+  - [ ] Ensure clicking on the blurred/darkened backdrop outside the drawer sheet automatically closes the active drawer.
+- [ ] **4.3 Escape Key & Close Icon**
+  - [ ] Add global `keydown` event listener for `Escape` key to close any active drawer/modal.
+  - [ ] Verify top-right `X` icon cleanly closes the drawer.
+
+---
+
+### Phase 5: Verification & Quality Assurance
+- [ ] **5.1 Build & Lint Check**
+  - [ ] Execute `pnpm build` and verify 0 TypeScript/ESLint errors.
+- [ ] **5.2 End-to-End Functional Walkthrough**
+  - [ ] Create a new Session Type with capacity -> verify saved and rendered on table.
+  - [ ] Edit Session Type -> verify capacity loaded and updated.
+  - [ ] Schedule Session -> verify choosing Session Type auto-populates capacity.
+  - [ ] Check Master Sessions table -> verify Description column & row clickability.
+  - [ ] Verify Backdrop click, Escape key, and X icon dismiss drawers seamlessly.
+- [ ] **5.3 GitHub Tracking Update**
+  - [ ] Update issue #9 checkboxes and post completion summary comment upon final sign-off.
