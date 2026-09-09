@@ -110,54 +110,54 @@ flowchart TD
 ---
 
 ### Phase 2: Client Avatar Moderation (`/admin/clients`)
-- [ ] **2.1 Avatar Storage & Validation Helpers**
-  - [ ] Implement client-side file validator (MIME types: PNG, JPG, WebP; max size: 5MB).
-  - [ ] Implement Supabase Storage upload helper to `avatars` bucket with unique timestamped paths.
-  - [ ] Implement Supabase Storage remove helper for old avatar files.
-- [ ] **2.2 Client Dossier Slide-Over Drawer Controls**
-  - [ ] Add Upload / Change Photo and Remove Photo buttons in `selectedClient` drawer header.
-  - [ ] Add hidden file input with `ref` triggering file selection.
-  - [ ] Add loading state / spinner during upload.
-- [ ] **2.3 Edit Client Modal Avatar Controls**
-  - [ ] Add avatar upload & preview to `editModalOpen` dialog.
-- [ ] **2.4 State & Database Sync**
-  - [ ] Sync updated `avatar_url` with Supabase `profiles` table.
-  - [ ] Update `AdminMockContext` client state so directory table rows update immediately.
-  - [ ] Display top-left toast feedback on success / failure.
+- [x] **2.1 Avatar Storage & Validation Helpers**
+  - [x] Implement client-side file validator (MIME types: PNG, JPG, WebP; max size: 5MB).
+  - [x] Implement Supabase Storage upload helper to `avatars` bucket with unique timestamped paths.
+  - [x] Implement Supabase Storage remove helper for old avatar files.
+- [x] **2.2 Client Dossier Slide-Over Drawer Controls**
+  - [x] Add Upload / Change Photo and Remove Photo buttons in `selectedClient` drawer header.
+  - [x] Add hidden file input with `ref` triggering file selection.
+  - [x] Add loading state / spinner during upload.
+- [x] **2.3 Edit Client Modal Avatar Controls**
+  - [x] Add avatar upload & preview to `editModalOpen` dialog.
+- [x] **2.4 State & Database Sync**
+  - [x] Sync updated `avatar_url` with Supabase `profiles` table.
+  - [x] Update `AdminMockContext` client state so directory table rows update immediately.
+  - [x] Display top-left toast feedback on success / failure.
 
 ---
 
 ### Phase 3: Sessions Calendar View (`/admin/sessions`)
-- [ ] **3.1 View Switcher Control**
-  - [ ] Add List vs Calendar vs Cards toggle in `/admin/sessions` toolbar.
-  - [ ] Maintain active view state across tab changes.
-- [ ] **3.2 Calendar Component Engine & Date Logic**
-  - [ ] Build month grid generator (start day of week, days in month, padding days).
-  - [ ] Implement Next Month, Previous Month, and Today navigation.
-  - [ ] Filter sessions falling within each specific calendar date.
-- [ ] **3.3 Calendar Event Card UI**
-  - [ ] Render luxury session cards with title, category, and scheduled time.
-  - [ ] Display publication status badge (`published`, `draft`, `full`, `completed`, `cancelled`).
-  - [ ] Display live capacity fill rate (`booked / max`) with occupancy indicator.
-- [ ] **3.4 Slide-Over Edit Drawer & Date Click Interactivity**
-  - [ ] Clicking a session card triggers `openEditSession(session)` opening the right slide-over edit drawer.
-  - [ ] Clicking an open date cell triggers `openCreateSession()` pre-populated with that date.
-  - [ ] Maintain full backdrop overlay, click-outside-to-close, and Escape key dismissal.
+- [x] **3.1 View Switcher Control**
+  - [x] Add List vs Calendar vs Cards toggle in `/admin/sessions` toolbar.
+  - [x] Maintain active view state across tab changes.
+- [x] **3.2 Calendar Component Engine & Date Logic**
+  - [x] Build month grid generator (start day of week, days in month, padding days).
+  - [x] Implement Next Month, Previous Month, and Today navigation.
+  - [x] Filter sessions falling within each specific calendar date.
+- [x] **3.3 Calendar Event Card UI**
+  - [x] Render luxury session cards with title, category, and scheduled time.
+  - [x] Display publication status badge (`published`, `draft`, `full`, `completed`, `cancelled`).
+  - [x] Display live capacity fill rate (`booked / max`) with occupancy indicator.
+- [x] **3.4 Slide-Over Edit Drawer & Date Click Interactivity**
+  - [x] Clicking a session card triggers `openEditSession(session)` opening the right slide-over edit drawer.
+  - [x] Clicking an open date cell triggers `openCreateSession()` pre-populated with that date.
+  - [x] Maintain full backdrop overlay, click-outside-to-close, and Escape key dismissal.
 
 ---
 
 ### Phase 4: Verification, Quality Assurance & Build
-- [ ] **4.1 Production Build & Types Validation**
-  - [ ] Execute `pnpm build` and ensure 0 TypeScript / ESLint errors.
-- [ ] **4.2 End-to-End Functional Walkthrough**
-  - [ ] Test client avatar upload (PNG, JPG, WebP).
-  - [ ] Test file size > 5MB error handling.
-  - [ ] Test avatar removal.
-  - [ ] Switch to Calendar View in `/admin/sessions` and navigate months.
-  - [ ] Verify session cards, capacity counters, and status badges.
-  - [ ] Click session card -> edit in right slide-over drawer -> save -> verify real-time update in calendar.
-- [ ] **4.3 GitHub Issue & Milestone Closure**
-  - [ ] Update Issue #10 checkboxes and post final summary comment.
+- [x] **4.1 Production Build & Types Validation**
+  - [x] Execute `pnpm build` and ensure 0 TypeScript / ESLint errors.
+- [x] **4.2 End-to-End Functional Walkthrough**
+  - [x] Test client avatar upload (PNG, JPG, WebP).
+  - [x] Test file size > 5MB error handling.
+  - [x] Test avatar removal.
+  - [x] Switch to Calendar View in `/admin/sessions` and navigate months.
+  - [x] Verify session cards, capacity counters, and status badges.
+  - [x] Click session card -> edit in right slide-over drawer -> save -> verify real-time update in calendar.
+- [x] **4.3 GitHub Issue & Milestone Closure**
+  - [x] Update Issue #10 checkboxes and post final summary comment.
 
 ---
 

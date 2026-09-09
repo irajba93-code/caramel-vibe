@@ -39,6 +39,7 @@ import { SortableHeader } from '@/components/admin/SortableHeader'
 import { matchesDateRange, sortItems } from '@/lib/admin/filterUtils'
 import { useAdminMock } from '@/context/AdminMockContext'
 import { AdminCategory, AdminSession, AdminSessionType } from '@/lib/admin/mockData'
+import { AdminSessionsCalendar } from '@/components/admin/AdminSessionsCalendar'
 
 // Helper for formatting datetime-local input safely
 const formatForDateTimeInput = (dateStr?: string | null) => {
@@ -81,7 +82,7 @@ export default function AdminSessionsPage() {
   const [activeTab, setActiveTab] = useState<'sessions' | 'categories' | 'types' | 'availability'>('sessions')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
+  const [viewMode, setViewMode] = useState<'table' | 'calendar' | 'cards'>('table')
 
   // Session Types Tab View State
   const [typeViewMode, setTypeViewMode] = useState<'table' | 'cards'>('table')
@@ -311,6 +312,29 @@ export default function AdminSessionsPage() {
       max_slots: (initialType?.capacity && initialType.capacity > 0) ? initialType.capacity : 6,
       start_time: formatForDateTimeInput(new Date().toISOString()),
       end_time: formatForDateTimeInput(new Date(Date.now() + (initialType?.default_duration_min || 90) * 60000).toISOString()),
+      status: 'published',
+    })
+    setSessionDrawerOpen(true)
+  }
+
+  const openCreateSessionForDate = (date: Date) => {
+    setEditingSession(null)
+    const initialType = sessionTypes[0]
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const dateStr = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    setSessionForm({
+      title: initialType?.name || '',
+      slug: '',
+      category_name: initialType?.category_name || categories[0]?.name || 'Bespoke Vintage Styling',
+      session_type_id: initialType?.id || '',
+      description: initialType?.description || '',
+      location_type: 'studio',
+      location_address: appSettings?.studio_address || 'Caramel Vibe Flagship Studio, Suite 402',
+      price: initialType?.default_price || 350,
+      currency: (appSettings?.studio_currency as string) || 'CAD',
+      max_slots: (initialType?.capacity && initialType.capacity > 0) ? initialType.capacity : 6,
+      start_time: `${dateStr}T14:00`,
+      end_time: `${dateStr}T15:30`,
       status: 'published',
     })
     setSessionDrawerOpen(true)
@@ -714,27 +738,40 @@ export default function AdminSessionsPage() {
                     </button>
                   ))}
 
-                  {/* View Mode Toggle (Table / Grid) */}
+                  {/* View Mode Switcher (List / Calendar / Cards) */}
                   <div className="inline-flex items-center p-0.5 rounded-lg bg-background border border-border shadow-xs ml-auto md:ml-2">
                     <button
                       type="button"
                       onClick={() => setViewMode('table')}
-                      title="Table View"
-                      className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                        viewMode === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      title="List / Table View"
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        viewMode === 'table' ? 'bg-primary text-primary-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
                       <List className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">List</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setViewMode('calendar')}
+                      title="Interactive Calendar View"
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        viewMode === 'calendar' ? 'bg-primary text-primary-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Calendar</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setViewMode('cards')}
                       title="Grid Cards View"
-                      className={`p-1.5 rounded-md transition-colors cursor-pointer ${
-                        viewMode === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      className={`px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        viewMode === 'cards' ? 'bg-primary text-primary-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
                       <LayoutGrid className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Cards</span>
                     </button>
                   </div>
                 </div>
@@ -967,6 +1004,14 @@ export default function AdminSessionsPage() {
                   </table>
                 </div>
               </div>
+            ) : viewMode === 'calendar' ? (
+              /* Interactive Luxury Calendar View */
+              <AdminSessionsCalendar
+                sessions={processedSessions}
+                onSelectSession={(ses) => setViewingSession(ses)}
+                onEditSession={(ses) => openEditSession(ses)}
+                onCreateSessionForDate={openCreateSessionForDate}
+              />
             ) : (
               /* Sessions Grid Cards View */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

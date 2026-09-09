@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Users,
   Search,
@@ -23,6 +23,11 @@ import {
   BookOpen,
   Edit2,
   Lock,
+  Upload,
+  Camera,
+  Trash2,
+  Loader2,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { AdminHeader } from '@/components/admin/AdminHeader'
 import { Avatar } from '@/components/ui/Avatar'
@@ -32,6 +37,20 @@ import { matchesDateRange, sortItems } from '@/lib/admin/filterUtils'
 import { useAdminMock } from '@/context/AdminMockContext'
 import { AdminClient } from '@/lib/admin/mockData'
 import { useToast } from '@/components/ui/ToastContext'
+import { createClient } from '@/lib/supabase/client'
+
+const VALID_AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+const MAX_AVATAR_SIZE = 5 * 1024 * 1024 // 5MB
+
+const validateAvatarFile = (file: File): string | null => {
+  if (!VALID_AVATAR_TYPES.includes(file.type)) {
+    return 'Invalid file format. Please upload a PNG, JPG, or WebP image.'
+  }
+  if (file.size > MAX_AVATAR_SIZE) {
+    return 'File size exceeds the 5MB limit. Please choose a smaller image under 5MB.'
+  }
+  return null
+}
 
 export default function AdminClientsPage() {
   const {
@@ -79,6 +98,12 @@ export default function AdminClientsPage() {
   // Ban Reason Form Modal
   const [banModalOpen, setBanModalOpen] = useState(false)
   const [banReasonText, setBanReasonText] = useState('')
+
+  // Supabase client instance & avatar upload refs
+  const supabase = useMemo(() => createClient(), [])
+  const dossierFileInputRef = useRef<HTMLInputElement>(null)
+  const editFileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
 
   // Invite Client Modal
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
@@ -193,6 +218,104 @@ export default function AdminClientsPage() {
     }
 
     setEditModalOpen(false)
+  }
+
+  // Avatar Upload & Moderation Handlers
+  const handleUploadAvatar = async (
+    file: File,
+    clientId: string,
+    mode: 'dossier' | 'edit'
+  ) => {
+    const validationError = validateAvatarFile(file)
+    if (validationError) {
+      showToast(validationError, 'error')
+      return
+    }
+
+    setUploadingAvatar(true)
+    try {
+      const fileExt = file.name.split('.').pop() || 'jpg'
+      const filePath = `${clientId}/avatar-${Date.now()}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true,
+        })
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      // If previous avatar exists in storage, clean it up
+      const oldAvatar = mode === 'dossier' ? selectedClient?.avatar_url : editForm.avatar_url
+      if (oldAvatar && oldAvatar.includes(clientId)) {
+        let pathToDelete = oldAvatar
+        if (oldAvatar.includes('/storage/v1/object/')) {
+          const parts = oldAvatar.split('/storage/v1/object/')
+          const segs = parts[1].split('/')
+          if (['public', 'sign', 'authenticated'].includes(segs[0])) segs.shift()
+          if (segs[0] === 'avatars') segs.shift()
+          pathToDelete = segs.join('/')
+        }
+        await supabase.storage.from('avatars').remove([pathToDelete]).catch(() => {})
+      }
+
+      // Update client profile in Supabase & context
+      await updateClient(clientId, { avatar_url: filePath })
+
+      // Update local state
+      if (mode === 'dossier' && selectedClient && selectedClient.id === clientId) {
+        setSelectedClient((prev) => (prev ? { ...prev, avatar_url: filePath } : null))
+      }
+      if (mode === 'edit') {
+        setEditForm((prev) => ({ ...prev, avatar_url: filePath }))
+      }
+
+      showToast('Client avatar uploaded and updated.', 'success')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed'
+      showToast(`Error uploading avatar: ${msg}`, 'error')
+    } finally {
+      setUploadingAvatar(false)
+      if (dossierFileInputRef.current) dossierFileInputRef.current.value = ''
+      if (editFileInputRef.current) editFileInputRef.current.value = ''
+    }
+  }
+
+  const handleRemoveAvatar = async (clientId: string, mode: 'dossier' | 'edit') => {
+    setUploadingAvatar(true)
+    try {
+      const oldAvatar = mode === 'dossier' ? selectedClient?.avatar_url : editForm.avatar_url
+      if (oldAvatar && oldAvatar.includes(clientId)) {
+        let pathToDelete = oldAvatar
+        if (oldAvatar.includes('/storage/v1/object/')) {
+          const parts = oldAvatar.split('/storage/v1/object/')
+          const segs = parts[1].split('/')
+          if (['public', 'sign', 'authenticated'].includes(segs[0])) segs.shift()
+          if (segs[0] === 'avatars') segs.shift()
+          pathToDelete = segs.join('/')
+        }
+        await supabase.storage.from('avatars').remove([pathToDelete]).catch(() => {})
+      }
+
+      await updateClient(clientId, { avatar_url: null })
+
+      if (mode === 'dossier' && selectedClient && selectedClient.id === clientId) {
+        setSelectedClient((prev) => (prev ? { ...prev, avatar_url: null } : null))
+      }
+      if (mode === 'edit') {
+        setEditForm((prev) => ({ ...prev, avatar_url: '' }))
+      }
+
+      showToast('Client avatar removed.', 'info')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Removal failed'
+      showToast(`Error removing avatar: ${msg}`, 'error')
+    } finally {
+      setUploadingAvatar(false)
+    }
   }
 
   const handleCopyId = async (id: string) => {
@@ -572,15 +695,23 @@ export default function AdminClientsPage() {
           >
             <div className="space-y-6">
               {/* Top Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-border">
-                <div className="flex items-center gap-3">
-                  <Avatar
-                    src={selectedClient.avatar_url}
-                    name={selectedClient.full_name || selectedClient.email}
-                    size="lg"
-                    className="w-14 h-14 ring-2 ring-primary/20"
-                  />
-                  <div>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-border gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative group shrink-0">
+                    <Avatar
+                      src={selectedClient.avatar_url}
+                      name={selectedClient.full_name || selectedClient.email}
+                      size="lg"
+                      className="w-16 h-16 ring-2 ring-primary/25"
+                    />
+                    {uploadingAvatar && (
+                      <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center">
+                        <Loader2 className="w-5 h-5 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <h3 className="font-display font-bold text-xl text-foreground">
                         {selectedClient.full_name}
@@ -592,17 +723,57 @@ export default function AdminClientsPage() {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground">{selectedClient.email}</p>
+
+                    {/* Avatar Moderation Controls */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="file"
+                        ref={dossierFileInputRef}
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) handleUploadAvatar(file, selectedClient.id, 'dossier')
+                        }}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={uploadingAvatar}
+                        onClick={() => dossierFileInputRef.current?.click()}
+                        className="px-2.5 py-1 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-[11px] font-semibold text-primary flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {uploadingAvatar ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3" />
+                        )}
+                        <span>{selectedClient.avatar_url ? 'Replace Avatar' : 'Upload Avatar'}</span>
+                      </button>
+
+                      {selectedClient.avatar_url && (
+                        <button
+                          type="button"
+                          disabled={uploadingAvatar}
+                          onClick={() => handleRemoveAvatar(selectedClient.id, 'dossier')}
+                          title="Remove client avatar"
+                          className="px-2 py-1 rounded-lg border border-border bg-background hover:bg-destructive/10 text-[11px] text-muted-foreground hover:text-destructive transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 self-end sm:self-auto">
                   <button
                     type="button"
                     onClick={() => openEditClient(selectedClient)}
                     className="px-3 py-1.5 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
                   >
                     <Edit2 className="w-3.5 h-3.5 text-primary" />
-                    <span>Edit Client</span>
+                    <span>Edit Profile</span>
                   </button>
 
                   <button
@@ -843,18 +1014,79 @@ export default function AdminClientsPage() {
                 />
               </div>
 
-              {/* Avatar URL */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold uppercase tracking-wider text-foreground">
-                  Avatar Image URL
+              {/* Profile Avatar Image Moderation in Edit Form */}
+              <div className="p-3.5 rounded-xl border border-border bg-background/60 space-y-2.5">
+                <label className="text-xs font-bold uppercase tracking-wider text-foreground block">
+                  Profile Avatar Image
                 </label>
-                <input
-                  type="url"
-                  value={editForm.avatar_url}
-                  onChange={(e) => setEditForm({ ...editForm, avatar_url: e.target.value })}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
-                />
+                <div className="flex items-center gap-3.5">
+                  <div className="relative group shrink-0">
+                    <Avatar
+                      src={editForm.avatar_url}
+                      name={editForm.full_name || editingClient.email}
+                      size="md"
+                      className="w-12 h-12 ring-1 ring-border"
+                    />
+                    {uploadingAvatar && (
+                      <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center">
+                        <Loader2 className="w-4 h-4 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-1.5">
+                    <input
+                      type="file"
+                      ref={editFileInputRef}
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) handleUploadAvatar(file, editingClient.id, 'edit')
+                      }}
+                      className="hidden"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={uploadingAvatar}
+                        onClick={() => editFileInputRef.current?.click()}
+                        className="px-2.5 py-1 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-xs font-semibold text-primary flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {uploadingAvatar ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3" />
+                        )}
+                        <span>{editForm.avatar_url ? 'Upload New Image' : 'Upload Image'}</span>
+                      </button>
+
+                      {editForm.avatar_url && (
+                        <button
+                          type="button"
+                          disabled={uploadingAvatar}
+                          onClick={() => handleRemoveAvatar(editingClient.id, 'edit')}
+                          className="px-2 py-1 rounded-lg border border-border bg-background hover:bg-destructive/10 text-xs text-muted-foreground hover:text-destructive transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Accepted formats: PNG, JPG, WebP (Max 5MB)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Optional direct URL / storage path */}
+                <div className="pt-1">
+                  <input
+                    type="text"
+                    value={editForm.avatar_url}
+                    onChange={(e) => setEditForm({ ...editForm, avatar_url: e.target.value })}
+                    placeholder="Or enter image storage path or external URL..."
+                    className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-[11px] text-foreground font-mono placeholder:font-sans focus:outline-none focus:ring-1 focus:ring-primary/40"
+                  />
+                </div>
               </div>
 
               {/* Role Tier & Status */}
