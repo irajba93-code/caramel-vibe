@@ -123,6 +123,24 @@ flowchart TD
 
 ---
 
+### Module E: Dedicated Atelier Sessions Booking Page (`/sessions`) & Interactive Calendar
+1. **Segmented View Switcher**:
+   - `Calendar View`: Interactive month grid + Day Inspector agenda sidebar.
+   - `Editorial Grid View`: Large experience cards with capacity fill meters.
+   - `Chronological List View`: Date-grouped session schedule.
+2. **Interactive Luxury Calendar Grid (`ClientSessionsCalendar.tsx`)**:
+   - Month & Year navigation with "Today" jump.
+   - Visual date tiles showing session dots / badges.
+   - Clicking a date opens that day's scheduled sessions in the split-view agenda.
+3. **Category & Availability Filters**:
+   - Service line filter pills (Bespoke Styling, Archival Authentication, Leather Restoration, Private Viewings).
+   - Capacity / availability toggles.
+4. **Seamless Booking & Waitlist Integration**:
+   - Clicking any session launches the slide-over `ClientBookingDrawer`.
+   - 1-click confirmation updates live capacity and reflects on `/dashboard`.
+
+---
+
 ## 4. Implementation Checklist & Progress Tracker
 
 ### Phase 1: Planning & Architecture
@@ -165,6 +183,15 @@ flowchart TD
 - [x] Ensure unified experience between `/dashboard` and `/client/dashboard`.
 - [x] Validate responsive layout on desktop, tablet, and mobile.
 - [x] Execute `pnpm build` and verify 0 TypeScript/ESLint errors.
+
+---
+
+### Phase 8: Dedicated Atelier Sessions Booking Page & Interactive Calendar (`/sessions`)
+- [x] Build `components/client/ClientSessionsCalendar.tsx` (interactive luxury month grid & day inspector).
+- [x] Build `components/client/ClientSessionsGrid.tsx` (editorial cards & chronological list views).
+- [x] Implement `app/sessions/page.tsx` with view switching, service line filters, and real-time CDC updates.
+- [x] Add "Atelier Sessions" link to `ClientLayout` header and link from `/dashboard`.
+- [x] Validate Next.js production build (`pnpm build`).
 
 ---
 

@@ -113,6 +113,7 @@ function Header({ onBag }: { onBag: () => void }) {
       <a href="#top" className="font-display text-2xl tracking-tight">caramel<span className="text-primary">.</span>vibe</a>
       <nav className="hidden gap-8 text-xs font-bold uppercase tracking-widest md:flex">
         <a href="#edit">The edit</a>
+        <Link href="/sessions" className="hover:text-primary transition-colors">Atelier Sessions</Link>
         <a href="#story">Our story</a>
         <a href="#faq">Questions</a>
       </nav>
@@ -172,6 +173,15 @@ function Header({ onBag }: { onBag: () => void }) {
 
                 {/* Navigation Options */}
                 <div className="space-y-1">
+                  <Link
+                    href="/sessions"
+                    onClick={() => setDropdownOpen(false)}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-foreground hover:bg-muted/80 hover:text-primary transition-colors"
+                  >
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span>Atelier Sessions</span>
+                  </Link>
+
                   <Link
                     href="/client/profile"
                     onClick={() => setDropdownOpen(false)}

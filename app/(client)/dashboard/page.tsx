@@ -388,13 +388,13 @@ export default function MemberDashboardPage() {
               <span>Dossier Settings</span>
             </Link>
 
-            <a
-              href="#atelier-sessions"
+            <Link
+              href="/sessions"
               className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Reserve Session</span>
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -504,13 +504,13 @@ export default function MemberDashboardPage() {
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 Browse our curated session calendar and place an in-person appointment hold.
               </p>
-              <a
-                href="#atelier-sessions"
+              <Link
+                href="/sessions"
                 className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline pt-1"
               >
-                <span>View Available Sessions</span>
+                <span>View Full Calendar</span>
                 <ChevronRight className="w-3.5 h-3.5" />
-              </a>
+              </Link>
             </div>
 
             {/* Step 3 */}
@@ -856,10 +856,10 @@ export default function MemberDashboardPage() {
           </div>
 
           <Link
-            href="/"
+            href="/sessions"
             className="text-xs font-bold text-primary hover:underline flex items-center gap-1 self-start sm:self-auto"
           >
-            <span>Explore Boutique Archive</span>
+            <span>Browse Full Atelier Calendar</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>

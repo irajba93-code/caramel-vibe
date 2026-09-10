@@ -52,6 +52,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   }
 
   const isDashboardActive = pathname === '/dashboard' || pathname === '/client/dashboard'
+  const isSessionsActive = pathname === '/sessions'
   const isProfileActive = pathname === '/client/profile'
 
   return (
@@ -82,6 +83,15 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               >
                 <Home className="w-4 h-4" />
                 <span>Storefront</span>
+              </Link>
+              <Link
+                href="/sessions"
+                className={`flex items-center gap-1.5 transition-colors ${
+                  isSessionsActive ? 'text-primary font-semibold' : 'hover:text-foreground'
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Atelier Sessions</span>
               </Link>
               <Link
                 href="/dashboard"
