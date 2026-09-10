@@ -161,6 +161,22 @@ flowchart TD
 
 ---
 
+### Phase 5: Real-Time Activity & Notification Logging
+- [x] **5.1 Postgres Database Activity Trigger**
+  - [x] Create `trg_booking_activity_log` trigger (AFTER INSERT on `public.bookings`).
+  - [x] Implement `log_booking_activity()` function populating `system_notifications_log` and `admin_audit_logs`.
+  - [x] Backfill historical audit logs and system notifications for existing client reservations.
+- [x] **5.2 Live Supabase Query Hydration**
+  - [x] Fetch live `admin_audit_logs` in `AdminMockContext` sorted by `created_at DESC` (replacing mock fallback).
+  - [x] Fetch live `system_notifications_log` in `AdminMockContext` sorted by `created_at DESC` (replacing mock fallback).
+  - [x] Wire live notification popover in `AdminHeader.tsx` and feed in `AdminRecentActivities.tsx`.
+- [x] **5.3 Supabase Realtime CDC Subscriptions**
+  - [x] Subscribe to `INSERT` on `public.admin_audit_logs` for instant timeline updates without page reload.
+  - [x] Subscribe to `INSERT` on `public.system_notifications_log` to dynamically increment unread counter.
+  - [x] Implement `markNotificationRead` and `markAllNotificationsRead` with database status persistence.
+
+---
+
 ## 5. Design Tokens & Visual Hierarchy
 
 | Element | Specification / Token | Usage |

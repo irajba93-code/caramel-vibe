@@ -21,7 +21,66 @@ import {
 } from '@/lib/admin/mockData'
 import { useToast } from '@/components/ui/ToastContext'
 import { createClient } from '@/lib/supabase/client'
-import type { Category, Session, SessionType, Profile, Booking, AppSetting } from '@/lib/supabase/types'
+import type {
+  Category,
+  Session,
+  SessionType,
+  Profile,
+  Booking,
+  AppSetting,
+  AdminAuditLog,
+  SystemNotificationLog,
+} from '@/lib/supabase/types'
+
+const formatTimeAgo = (dateStr?: string | null) => {
+  if (!dateStr) return 'Recently'
+  try {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000)
+    if (diffSec < 60) return 'Just now'
+    const diffMin = Math.floor(diffSec / 60)
+    if (diffMin < 60) return `${diffMin}m ago`
+    const diffHours = Math.floor(diffMin / 60)
+    if (diffHours < 24) return `${diffHours}h ago`
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  } catch {
+    return dateStr
+  }
+}
+
+const getActionTitle = (action: string, details?: any) => {
+  switch (action) {
+    case 'booking_created':
+      return details?.session_title
+        ? `Reservation: ${details.session_title}`
+        : 'New Atelier Reservation'
+    case 'booking_checked_in':
+      return 'Guest Checked In'
+    case 'booking_cancelled':
+      return 'Reservation Cancelled'
+    case 'payment_updated':
+      return 'Settlement Status Updated'
+    case 'session_created':
+      return details?.title ? `Session Created: ${details.title}` : 'Studio Session Created'
+    case 'session_updated':
+      return details?.title ? `Session Updated: ${details.title}` : 'Studio Session Updated'
+    case 'client_registered':
+      return 'New Client Registered'
+    case 'client_status_changed':
+      return 'Client Standing Changed'
+    case 'client_profile_updated':
+      return 'Client Profile Updated'
+    case 'setting_updated':
+      return 'Studio Setting Updated'
+    case 'category_created':
+      return 'Service Line Created'
+    default:
+      return action.replace(/_/g, ' ')
+  }
+}
 
 interface AdminMockContextType {
   // Activities
@@ -123,14 +182,43 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
   const toggleMobileDrawer = () => setMobileDrawerOpen((prev) => !prev)
   const closeMobileDrawer = () => setMobileDrawerOpen(false)
 
-  const addActivity = useCallback((act: Omit<AdminActivity, 'id' | 'created_at'>) => {
+  const addActivity = useCallback(async (act: Omit<AdminActivity, 'id' | 'created_at'>) => {
     const newAct: AdminActivity = {
       ...act,
       id: `act-${Date.now()}`,
       created_at: new Date().toISOString(),
     }
-    setActivities((prev) => [newAct, ...prev])
-  }, [])
+    setActivities((prev) => [newAct, ...prev.filter((a) => a.id !== newAct.id)])
+
+    try {
+      await supabase.from('admin_audit_logs').insert({
+        admin_id: currentUserId,
+        target_type: act.action_type.startsWith('booking')
+          ? 'booking'
+          : act.action_type.startsWith('session')
+          ? 'session'
+          : act.action_type.startsWith('client')
+          ? 'client'
+          : 'system',
+        target_id: act.target_id || null,
+        action: act.action_type,
+        reason: act.description,
+        details: {
+          actor_type: act.actor_type,
+          actor_name: act.actor_name,
+          actor_email: act.actor_email,
+          actor_avatar: act.actor_avatar,
+          title: act.title,
+          description: act.description,
+          target_id: act.target_id,
+          target_label: act.target_label,
+        },
+        created_at: new Date().toISOString(),
+      })
+    } catch (err) {
+      console.warn('Failed to persist admin audit log to Supabase:', err)
+    }
+  }, [currentUserId, supabase])
 
   // Fetch Live Data from Supabase
   const loadSupabaseData = useCallback(async () => {
@@ -338,6 +426,62 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
         setCurrentUserId(user.id)
         setCurrentUserEmail(user.email || null)
       }
+
+      // 8. Fetch Live Admin Audit Logs
+      const { data: dbAuditLogs } = await supabase
+        .from('admin_audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (dbAuditLogs && dbAuditLogs.length > 0) {
+        const mappedActivities: AdminActivity[] = dbAuditLogs.map((log: AdminAuditLog) => {
+          const details = (log.details as Record<string, any>) || {}
+          const actorType = (details.actor_type as 'admin' | 'client') || 'client'
+          const actorName = details.actor_name || details.client_name || 'Atelier Client'
+          const actorEmail = details.actor_email || details.client_email || 'client@caramelvibe.com'
+          const actorAvatar = details.actor_avatar || details.client_avatar || null
+          const targetId = log.target_id || details.booking_id || undefined
+          const targetLabel = details.booking_number || details.session_title || undefined
+
+          return {
+            id: log.id,
+            actor_type: actorType,
+            actor_name: actorName,
+            actor_email: actorEmail,
+            actor_avatar: actorAvatar,
+            action_type: (log.action as AdminActivity['action_type']) || 'booking_created',
+            title: getActionTitle(log.action, details),
+            description: log.reason || details.description || `Activity logged for ${targetLabel || targetId}`,
+            target_id: targetId,
+            target_label: targetLabel,
+            timestamp: formatTimeAgo(log.created_at),
+            created_at: log.created_at,
+          }
+        })
+        setActivities(mappedActivities)
+      }
+
+      // 9. Fetch Live System Notifications Log
+      const { data: dbNotifications } = await supabase
+        .from('system_notifications_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (dbNotifications && dbNotifications.length > 0) {
+        const mappedNotifications: AdminNotification[] = dbNotifications.map((n: SystemNotificationLog) => {
+          return {
+            id: n.id,
+            title: n.subject || 'Atelier Notification',
+            message: n.message || '',
+            type: (n.notification_type?.startsWith('booking') ? 'booking' : 'system') as AdminNotification['type'],
+            read: n.status === 'read',
+            timestamp: formatTimeAgo(n.created_at),
+          }
+        })
+        setNotifications(mappedNotifications)
+      }
     } catch (err) {
       console.error('Error hydrating Supabase admin data:', err)
     } finally {
@@ -354,36 +498,84 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bookings' },
+        () => {
+          loadSupabaseData()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'admin_audit_logs' },
         (payload) => {
           if (payload.eventType === 'INSERT') {
-            const newBk = payload.new as Booking
+            const newLog = payload.new as AdminAuditLog
+            const details = (newLog.details as Record<string, any>) || {}
+            const actorType = (details.actor_type as 'admin' | 'client') || 'client'
+            const actorName = details.actor_name || details.client_name || 'Atelier Client'
+            const actorEmail = details.actor_email || details.client_email || 'client@caramelvibe.com'
+            const actorAvatar = details.actor_avatar || details.client_avatar || null
+            const targetId = newLog.target_id || details.booking_id || undefined
+            const targetLabel = details.booking_number || details.session_title || undefined
+
+            const newAct: AdminActivity = {
+              id: newLog.id,
+              actor_type: actorType,
+              actor_name: actorName,
+              actor_email: actorEmail,
+              actor_avatar: actorAvatar,
+              action_type: (newLog.action as AdminActivity['action_type']) || 'booking_created',
+              title: getActionTitle(newLog.action, details),
+              description: newLog.reason || details.description || `Activity logged for ${targetLabel || targetId}`,
+              target_id: targetId,
+              target_label: targetLabel,
+              timestamp: 'Just now',
+              created_at: newLog.created_at,
+            }
+
+            setActivities((prev) => [newAct, ...prev.filter((a) => a.id !== newAct.id)])
+          } else {
+            loadSupabaseData()
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'system_notifications_log' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newNotifRow = payload.new as SystemNotificationLog
             const newNotif: AdminNotification = {
-              id: `notif-${Date.now()}`,
-              title: 'New Reservation Placed',
-              message: `New booking ${newBk.booking_number} placed.`,
-              type: 'booking',
-              read: false,
+              id: newNotifRow.id,
+              title: newNotifRow.subject || 'New Atelier Event',
+              message: newNotifRow.message || '',
+              type: (newNotifRow.notification_type?.startsWith('booking') ? 'booking' : 'system') as AdminNotification['type'],
+              read: newNotifRow.status === 'read',
               timestamp: 'Just now',
             }
-            setNotifications((prev) => [newNotif, ...prev])
-            addActivity({
-              actor_type: 'client',
-              actor_name: 'Atelier Client',
-              actor_email: 'client@caramelvibe.com',
-              action_type: 'booking_created',
-              title: 'New Real-Time Reservation',
-              description: `New booking ${newBk.booking_number} placed via boutique portal.`,
-              target_id: newBk.id,
-              target_label: newBk.booking_number,
-              timestamp: 'Just now',
-            })
-            showToast('New real-time booking event received.', 'info')
+
+            setNotifications((prev) => [newNotif, ...prev.filter((n) => n.id !== newNotif.id)])
+            showToast(newNotif.message || newNotif.title, 'info')
+          } else {
+            loadSupabaseData()
           }
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'categories' },
+        () => {
+          loadSupabaseData()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sessions' },
+        () => {
+          loadSupabaseData()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles' },
         () => {
           loadSupabaseData()
         }
@@ -1229,12 +1421,30 @@ export function AdminMockProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const markNotificationRead = (id: string) => {
+  const markNotificationRead = async (id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
+    try {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+        await supabase
+          .from('system_notifications_log')
+          .update({ status: 'read' })
+          .eq('id', id)
+      }
+    } catch (err) {
+      console.warn('Error updating notification status in Supabase:', err)
+    }
   }
 
-  const markAllNotificationsRead = () => {
+  const markAllNotificationsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    try {
+      await supabase
+        .from('system_notifications_log')
+        .update({ status: 'read' })
+        .eq('status', 'unread')
+    } catch (err) {
+      console.warn('Error updating all notifications in Supabase:', err)
+    }
     showToast('All notifications marked as read.', 'info')
   }
 

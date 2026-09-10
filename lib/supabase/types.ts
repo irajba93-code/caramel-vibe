@@ -127,3 +127,29 @@ export interface UserLoginHistory {
   status: string | null
   login_at: string
 }
+
+export interface AdminAuditLog {
+  id: string
+  admin_id: string | null
+  target_type: string
+  target_id: string | null
+  action: string
+  reason: string | null
+  details: Record<string, any> | null
+  created_at: string
+}
+
+export interface SystemNotificationLog {
+  id: string
+  recipient_id: string | null
+  recipient_email: string
+  recipient_phone: string | null
+  notification_type: string
+  channel: string
+  subject: string
+  message: string
+  status: string
+  metadata: Record<string, any> | null
+  created_at: string
+}
+
