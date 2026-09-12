@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/ToastContext'
 import {
@@ -25,7 +26,9 @@ import {
   MapPin,
 } from 'lucide-react'
 
-export default function AtelierSessionsPage() {
+function AtelierSessionsContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
   const { showToast } = useToast()
 
@@ -33,6 +36,7 @@ export default function AtelierSessionsPage() {
   const [sessions, setSessions] = useState<ClientCalendarSession[]>([])
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
 
   // Filters & View Modes
   const [viewMode, setViewMode] = useState<'calendar' | 'grid' | 'list'>('calendar')
@@ -43,6 +47,17 @@ export default function AtelierSessionsPage() {
   // Booking Drawer State
   const [selectedSessionForBooking, setSelectedSessionForBooking] =
     useState<ClientCalendarSession | null>(null)
+
+  // Load User Auth
+  useEffect(() => {
+    async function checkUser() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      setCurrentUser(user)
+    }
+    checkUser()
+  }, [supabase])
 
   // Load Sessions Data
   const loadSessions = useCallback(async (showIndicator = false) => {
@@ -85,6 +100,21 @@ export default function AtelierSessionsPage() {
   useEffect(() => {
     loadSessions()
   }, [loadSessions])
+
+  // Intent Recovery on Load (e.g. redirected back after login)
+  useEffect(() => {
+    if (loading || sessions.length === 0) return
+
+    const bookSessionIdParam = searchParams.get('bookSessionId')
+    if (bookSessionIdParam) {
+      const found = sessions.find((s) => s.id === bookSessionIdParam)
+      if (found) {
+        setSelectedSessionForBooking(found)
+        showToast(`Resumed booking for ${found.title}`, 'info')
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+    }
+  }, [searchParams, sessions, loading, showToast])
 
   // Realtime Subscriptions for live capacity updates
   useEffect(() => {
@@ -153,6 +183,21 @@ export default function AtelierSessionsPage() {
     })
   }, [sessions, selectedCategory, availabilityOnly, searchQuery])
 
+  // Gated Session Selection Trigger
+  const handleSelectSessionWithAuth = async (session: ClientCalendarSession) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      showToast('Please sign in to reserve your atelier experience spot.', 'info')
+      router.push(`/login?redirect=${encodeURIComponent(`/sessions?bookSessionId=${session.id}`)}`)
+      return
+    }
+
+    setSelectedSessionForBooking(session)
+  }
+
   if (loading) {
     return (
       <div className="container-cv py-20 text-center text-muted-foreground flex flex-col items-center justify-center gap-3">
@@ -219,31 +264,31 @@ export default function AtelierSessionsPage() {
 
           <div className="p-3 rounded-2xl bg-background/60 border border-border/60 flex items-center gap-3">
             <div className="p-2 rounded-xl bg-accent/15 text-accent">
-              <Sparkles className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4" />
             </div>
             <div>
-              <div className="font-bold text-foreground">{categories.length} Service Lines</div>
-              <div className="text-[11px] text-muted-foreground font-medium">Bespoke &amp; Masterclass</div>
+              <div className="font-bold text-foreground">Verified Master Curators</div>
+              <div className="text-[11px] text-muted-foreground font-medium">1-on-1 Studio Sessions</div>
             </div>
           </div>
 
           <div className="p-3 rounded-2xl bg-background/60 border border-border/60 flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-[#3e6b48]/10 text-[#3e6b48]">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="p-2 rounded-xl bg-primary/10 text-primary">
+              <Clock className="w-4 h-4" />
             </div>
             <div>
-              <div className="font-bold text-foreground">On-Premise Settlement</div>
-              <div className="text-[11px] text-muted-foreground font-medium">Held with zero upfront fees</div>
+              <div className="font-bold text-foreground">Instant Digital Access Pass</div>
+              <div className="text-[11px] text-muted-foreground font-medium">On-Premise Settlement</div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Interactive Filter & View Switcher Toolbar */}
-      <div className="bg-card border border-border rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+      {/* Filter & View Switcher Toolbar */}
+      <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Category Filter Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
             <button
               type="button"
               onClick={() => setSelectedCategory('all')}
@@ -348,13 +393,13 @@ export default function AtelierSessionsPage() {
       {viewMode === 'calendar' ? (
         <ClientSessionsCalendar
           sessions={filteredSessions}
-          onSelectSession={(ses) => setSelectedSessionForBooking(ses)}
+          onSelectSession={handleSelectSessionWithAuth}
         />
       ) : (
         <ClientSessionsGrid
           sessions={filteredSessions}
           viewMode={viewMode}
-          onSelectSession={(ses) => setSelectedSessionForBooking(ses)}
+          onSelectSession={handleSelectSessionWithAuth}
         />
       )}
 
@@ -366,5 +411,13 @@ export default function AtelierSessionsPage() {
         onSuccess={() => loadSessions()}
       />
     </div>
+  )
+}
+
+export default function AtelierSessionsPage() {
+  return (
+    <Suspense fallback={<div className="container-cv py-20 text-center text-xs uppercase tracking-widest text-muted-foreground">Loading Atelier Calendar...</div>}>
+      <AtelierSessionsContent />
+    </Suspense>
   )
 }

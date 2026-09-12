@@ -112,7 +112,7 @@ export function ClientBookingDrawer({
         })
         .eq('id', session.id)
 
-      // 3. Insert notification record
+      // 3. Insert notification record for real-time alerting
       if (user.email) {
         await supabase.from('system_notifications_log').insert({
           recipient_id: user.id,
@@ -121,15 +121,35 @@ export function ClientBookingDrawer({
           channel: 'in_app',
           subject: `Atelier Reservation Confirmed: ${session.title}`,
           message: `Your booking (#${bookingNumber}) for ${slots} guest(s) on ${startDate.toLocaleDateString()} has been placed. Payment is settled on-premise.`,
-          status: 'sent',
+          status: 'unread',
           metadata: {
+            is_read: false,
             booking_number: bookingNumber,
             session_id: session.id,
+            session_title: session.title,
             slots_booked: slots,
             total_price: totalPrice,
+            currency: session.currency || 'CAD',
+            created_at: nowIso,
           },
         })
       }
+
+      // 4. Log to admin audit logs
+      await supabase.from('admin_audit_logs').insert({
+        admin_id: null,
+        target_type: 'booking',
+        target_id: bookingNumber,
+        action: 'create_booking',
+        reason: `Client ${user.email} confirmed reservation for session ${session.title}`,
+        details: {
+          booking_number: bookingNumber,
+          session_id: session.id,
+          user_id: user.id,
+          slots_booked: slots,
+          total_price: totalPrice,
+        },
+      })
 
       showToast(`Reservation #${bookingNumber} confirmed! Digital pass generated.`, 'success')
       onSuccess()

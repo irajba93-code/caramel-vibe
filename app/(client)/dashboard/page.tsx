@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useCallback, useMemo, Suspense } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/ToastContext'
 import { Avatar } from '@/components/ui/Avatar'
@@ -33,11 +34,31 @@ import {
   XCircle,
   HelpCircle,
   FileText,
+  ShoppingBag,
+  MessageSquare,
+  ExternalLink,
+  Package,
 } from 'lucide-react'
 import type { Profile, Session, SessionWaitlist } from '@/lib/supabase/types'
 
 interface FormattedBooking extends ClientPassBooking {
   category_name?: string
+}
+
+export interface ReservedHandbag {
+  id: string
+  reference_number: string
+  product_name: string
+  product_price: string
+  product_image: string
+  product_detail?: string
+  shipping_address: string
+  payment_method: string
+  special_requests?: string
+  status: string
+  created_at: string
+  client_name?: string
+  client_phone?: string
 }
 
 interface FormattedWaitlist extends SessionWaitlist {
@@ -53,14 +74,16 @@ interface FormattedWaitlist extends SessionWaitlist {
   }
 }
 
-export default function MemberDashboardPage() {
+function MemberDashboardContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { showToast } = useToast()
   const supabase = useMemo(() => createClient(), [])
 
   // State
   const [profile, setProfile] = useState<Profile | null>(null)
   const [bookings, setBookings] = useState<FormattedBooking[]>([])
+  const [reservedHandbags, setReservedHandbags] = useState<ReservedHandbag[]>([])
   const [waitlists, setWaitlists] = useState<FormattedWaitlist[]>([])
   const [availableSessions, setAvailableSessions] = useState<(Session & { category_name?: string })[]>([])
   const [cancellationLeadHours, setCancellationLeadHours] = useState(24)
@@ -69,7 +92,15 @@ export default function MemberDashboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Navigation Tabs
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'waitlist' | 'history'>('upcoming')
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'handbags' | 'waitlist' | 'history'>('upcoming')
+
+  // Sync tab from URL search parameters if provided
+  useEffect(() => {
+    const tabParam = searchParams.get('tab')
+    if (tabParam === 'handbags' || tabParam === 'waitlist' || tabParam === 'history' || tabParam === 'upcoming') {
+      setActiveTab(tabParam)
+    }
+  }, [searchParams])
 
   // Modals & Drawers
   const [selectedPassBooking, setSelectedPassBooking] = useState<FormattedBooking | null>(null)
@@ -163,7 +194,46 @@ export default function MemberDashboardPage() {
         setBookings(formatted)
       }
 
-      // 4. Fetch Waitlists
+      // 4. Fetch Handbag Reservation Inquiries from system_notifications_log
+      const notifQuery = user.email
+        ? supabase
+            .from('system_notifications_log')
+            .select('*')
+            .or(`recipient_id.eq.${user.id},recipient_email.eq.${user.email}`)
+            .eq('notification_type', 'bag_reservation_inquiry')
+            .order('created_at', { ascending: false })
+        : supabase
+            .from('system_notifications_log')
+            .select('*')
+            .eq('recipient_id', user.id)
+            .eq('notification_type', 'bag_reservation_inquiry')
+            .order('created_at', { ascending: false })
+
+      const { data: handbagNotifs, error: bagError } = await notifQuery
+
+      if (!bagError && handbagNotifs) {
+        const parsedBags: ReservedHandbag[] = handbagNotifs.map((n) => {
+          const meta = (n.metadata || {}) as any
+          return {
+            id: n.id,
+            reference_number: meta.reference_number || `RSV-${n.id.slice(0, 6)}`,
+            product_name: meta.product_name || 'Archival Handbag',
+            product_price: meta.product_price || '',
+            product_image: meta.product_image || '/products/caramel-satchel.png',
+            product_detail: meta.product_detail || 'Vintage leather · Authenticated',
+            shipping_address: meta.shipping_address || '',
+            payment_method: meta.payment_method || 'Cash on delivery',
+            special_requests: meta.special_requests || '',
+            status: meta.status || 'Pending Concierge Confirmation',
+            created_at: meta.created_at || n.created_at,
+            client_name: meta.client_name || profileData?.full_name || '',
+            client_phone: meta.client_phone || profileData?.phone || '',
+          }
+        })
+        setReservedHandbags(parsedBags)
+      }
+
+      // 5. Fetch Waitlists
       const { data: waitlistData } = await supabase
         .from('session_waitlists')
         .select(`
@@ -197,7 +267,7 @@ export default function MemberDashboardPage() {
         setWaitlists(formattedWaitlist)
       }
 
-      // 5. Fetch Available Published Sessions for Discovery
+      // 6. Fetch Available Published Sessions for Discovery
       const nowIso = new Date().toISOString()
       const { data: sessionsData } = await supabase
         .from('sessions')
@@ -232,9 +302,18 @@ export default function MemberDashboardPage() {
     loadDashboardData()
   }, [loadDashboardData])
 
-  // Realtime Subscriptions
+  // Realtime Subscriptions & Window Refresh Listener
   useEffect(() => {
-    if (!profile?.id) return
+    const handleLocalRefresh = () => {
+      loadDashboardData()
+    }
+    window.addEventListener('atelier-notification-refresh', handleLocalRefresh)
+
+    if (!profile?.id) {
+      return () => {
+        window.removeEventListener('atelier-notification-refresh', handleLocalRefresh)
+      }
+    }
 
     const bookingsChannel = supabase
       .channel(`client-bookings-sync-${profile.id}`)
@@ -245,6 +324,22 @@ export default function MemberDashboardPage() {
           schema: 'public',
           table: 'bookings',
           filter: `user_id=eq.${profile.id}`,
+        },
+        () => {
+          loadDashboardData()
+        }
+      )
+      .subscribe()
+
+    const notifsChannel = supabase
+      .channel(`client-notifs-dashboard-${profile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_notifications_log',
+          filter: `recipient_id=eq.${profile.id}`,
         },
         () => {
           loadDashboardData()
@@ -268,7 +363,9 @@ export default function MemberDashboardPage() {
       .subscribe()
 
     return () => {
+      window.removeEventListener('atelier-notification-refresh', handleLocalRefresh)
       supabase.removeChannel(bookingsChannel)
+      supabase.removeChannel(notifsChannel)
       supabase.removeChannel(sessionsChannel)
     }
   }, [profile?.id, supabase, loadDashboardData])
@@ -399,7 +496,7 @@ export default function MemberDashboardPage() {
         </div>
 
         {/* Quick KPI Counters */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-6 mt-6 border-t border-border/80">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-6 mt-6 border-t border-border/80">
           <div className="p-3 rounded-2xl bg-background/60 border border-border/60 flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
               <CalendarCheck className="w-4 h-4" />
@@ -410,6 +507,20 @@ export default function MemberDashboardPage() {
               </div>
               <div className="text-[11px] text-muted-foreground font-medium">
                 Active Appointments
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-background/60 border border-border/60 flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+              <ShoppingBag className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-lg font-bold text-foreground font-display">
+                {reservedHandbags.length}
+              </div>
+              <div className="text-[11px] text-muted-foreground font-medium">
+                Reserved Handbags
               </div>
             </div>
           </div>
@@ -428,7 +539,7 @@ export default function MemberDashboardPage() {
             </div>
           </div>
 
-          <div className="p-3 rounded-2xl bg-background/60 border border-border/60 col-span-2 sm:col-span-1 flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-background/60 border border-border/60 flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-[#3e6b48]/10 text-[#3e6b48]">
               <History className="w-4 h-4" />
             </div>
@@ -539,19 +650,19 @@ export default function MemberDashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-5">
           <div>
             <h2 className="font-display font-bold text-2xl text-foreground">
-              Appointment Management Hub
+              Client Reservations &amp; Passes
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Live reservations, digital access passes, and waitlist allocations
+              Live sessions, reserved archival handbags, digital passes, and waitlist allocations
             </p>
           </div>
 
           {/* Segmented Switcher */}
-          <div className="inline-flex items-center p-1 rounded-xl bg-background border border-border shadow-xs self-start sm:self-auto text-xs">
+          <div className="inline-flex items-center p-1 rounded-xl bg-background border border-border shadow-xs self-start sm:self-auto text-xs overflow-x-auto max-w-full">
             <button
               type="button"
               onClick={() => setActiveTab('upcoming')}
-              className={`px-3.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'upcoming'
                   ? 'bg-primary text-primary-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
@@ -563,8 +674,21 @@ export default function MemberDashboardPage() {
 
             <button
               type="button"
+              onClick={() => setActiveTab('handbags')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'handbags'
+                  ? 'bg-primary text-primary-foreground shadow-xs'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Reserved Bags ({reservedHandbags.length})</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('waitlist')}
-              className={`px-3.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'waitlist'
                   ? 'bg-primary text-primary-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
@@ -577,17 +701,147 @@ export default function MemberDashboardPage() {
             <button
               type="button"
               onClick={() => setActiveTab('history')}
-              className={`px-3.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'history'
                   ? 'bg-primary text-primary-foreground shadow-xs'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <History className="w-3.5 h-3.5" />
-              <span>Past Archive ({pastBookings.length})</span>
+              <span>Archive ({pastBookings.length})</span>
             </button>
           </div>
         </div>
+
+        {/* Tab: Reserved Handbags */}
+        {activeTab === 'handbags' && (
+          <div className="space-y-4">
+            {reservedHandbags.length === 0 ? (
+              <div className="p-10 rounded-2xl border border-dashed border-border bg-background/40 text-center space-y-3">
+                <ShoppingBag className="w-10 h-10 text-muted-foreground/60 mx-auto" />
+                <h4 className="font-display font-bold text-base text-foreground">
+                  No Reserved Handbags
+                </h4>
+                <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                  You have not reserved any archival pieces yet. Browse our curated edit on the storefront to secure a one-of-one vintage piece.
+                </p>
+                <Link
+                  href="/#edit"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all shadow-xs mt-2"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Explore The Edit</span>
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {reservedHandbags.map((bag) => {
+                  const createdDate = new Date(bag.created_at)
+                  const whatsappMsg = encodeURIComponent(
+                    `Hello Caramel Vibe Concierge, checking in on my handbag reservation for ${bag.product_name} (Ref: #${bag.reference_number}).`
+                  )
+                  const whatsappUrl = `https://wa.me/?text=${whatsappMsg}`
+
+                  return (
+                    <div
+                      key={bag.id}
+                      className="p-5 rounded-2xl border border-border bg-background hover:border-primary/40 transition-all shadow-xs space-y-4 flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                            Archival Handbag
+                          </span>
+                          <span className="font-mono text-xs font-bold text-accent">
+                            #{bag.reference_number}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3.5">
+                          <div className="relative w-16 h-16 rounded-xl bg-muted p-2 shrink-0 border border-border/80 flex items-center justify-center overflow-hidden">
+                            <Image
+                              src={bag.product_image || '/products/caramel-satchel.png'}
+                              alt={bag.product_name}
+                              width={64}
+                              height={64}
+                              className="object-contain max-h-12 w-auto"
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-display font-bold text-lg text-foreground truncate">
+                              {bag.product_name}
+                            </h3>
+                            <p className="text-sm font-bold text-primary">{bag.product_price}</p>
+                            {bag.product_detail && (
+                              <p className="text-[11px] text-muted-foreground truncate">
+                                {bag.product_detail}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 text-xs text-muted-foreground pt-1 border-t border-border/60">
+                          <div className="flex items-center gap-2 text-foreground font-medium">
+                            <Calendar className="w-3.5 h-3.5 text-primary" />
+                            <span>
+                              Reserved on{' '}
+                              {createdDate.toLocaleDateString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-3.5 h-3.5 text-accent" />
+                            <span className="truncate">
+                              Destination: {bag.shipping_address || 'Studio Collection / Local Delivery'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Package className="w-3.5 h-3.5 text-primary" />
+                            <span>Settlement: {bag.payment_method}</span>
+                          </div>
+
+                          {bag.special_requests && (
+                            <p className="text-[11px] text-muted-foreground italic bg-muted/40 p-2 rounded-lg">
+                              &ldquo;{bag.special_requests}&rdquo;
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Status Bar */}
+                        <div className="pt-2 border-t border-border/60 flex items-center justify-between text-xs">
+                          <span className="text-[11px] text-muted-foreground">Reservation Status</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/25">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>{bag.status}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Action Button */}
+                      <div className="pt-3 border-t border-border/80 flex items-center justify-between gap-2">
+                        <a
+                          href={whatsappUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold uppercase tracking-wider transition-all shadow-xs cursor-pointer"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>WhatsApp Concierge</span>
+                          <ExternalLink className="w-3 h-3 opacity-80" />
+                        </a>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tab 1: Upcoming Appointments */}
         {activeTab === 'upcoming' && (
@@ -976,5 +1230,13 @@ export default function MemberDashboardPage() {
         onSuccess={() => loadDashboardData()}
       />
     </div>
+  )
+}
+
+export default function MemberDashboardPage() {
+  return (
+    <Suspense fallback={<div className="container-cv py-20 text-center text-muted-foreground flex flex-col items-center justify-center gap-3"><Sparkles className="w-6 h-6 animate-pulse text-accent" /><span className="text-sm font-medium">Hydrating member atelier dossier...</span></div>}>
+      <MemberDashboardContent />
+    </Suspense>
   )
 }

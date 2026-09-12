@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Bell,
   Check,
@@ -12,6 +13,8 @@ import {
   X,
   Clock,
   Inbox,
+  ShoppingBag,
+  ChevronRight,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/ToastContext'
@@ -22,6 +25,7 @@ interface ClientNotificationCenterProps {
 }
 
 export function ClientNotificationCenter({ userId }: ClientNotificationCenterProps) {
+  const router = useRouter()
   const supabase = createClient()
   const { showToast } = useToast()
   const [notifications, setNotifications] = useState<SystemNotificationLog[]>([])
@@ -29,30 +33,38 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
   const [isOpen, setIsOpen] = useState(false)
   const popoverRef = useRef<HTMLDivElement>(null)
 
-  // Fetch initial notifications
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return
+
+    const { data, error } = await supabase
+      .from('system_notifications_log')
+      .select('*')
+      .eq('recipient_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(25)
+
+    if (!error && data) {
+      const notifs = data as SystemNotificationLog[]
+      setNotifications(notifs)
+      // Count unread: metadata?.is_read === false or status !== 'read'
+      const unread = notifs.filter(
+        (n) => n.status !== 'read' && (!n.metadata || (n.metadata as any).is_read !== true)
+      ).length
+      setUnreadCount(unread)
+    }
+  }, [userId, supabase])
+
+  // Fetch initial notifications & listen to window events
   useEffect(() => {
     if (!userId) return
 
-    async function fetchNotifications() {
-      const { data, error } = await supabase
-        .from('system_notifications_log')
-        .select('*')
-        .eq('recipient_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(20)
-
-      if (!error && data) {
-        const notifs = data as SystemNotificationLog[]
-        setNotifications(notifs)
-        // Count unread: metadata?.is_read === false or status !== 'read'
-        const unread = notifs.filter(
-          (n) => n.status !== 'read' && (!n.metadata || (n.metadata as any).is_read !== true)
-        ).length
-        setUnreadCount(unread)
-      }
-    }
-
     fetchNotifications()
+
+    // Listen to local app custom refresh events (e.g. after booking or reserving bag)
+    const handleLocalRefresh = () => {
+      fetchNotifications()
+    }
+    window.addEventListener('atelier-notification-refresh', handleLocalRefresh)
 
     // Supabase Realtime CDC subscription for live notification arrival
     const channel = supabase
@@ -60,24 +72,29 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'system_notifications_log',
           filter: `recipient_id=eq.${userId}`,
         },
         (payload) => {
-          const newNotif = payload.new as SystemNotificationLog
-          setNotifications((prev) => [newNotif, ...prev])
-          setUnreadCount((prev) => prev + 1)
-          showToast(`🔔 ${newNotif.subject || 'New atelier alert received'}`, 'info')
+          if (payload.eventType === 'INSERT') {
+            const newNotif = payload.new as SystemNotificationLog
+            setNotifications((prev) => [newNotif, ...prev.filter((n) => n.id !== newNotif.id)])
+            setUnreadCount((prev) => prev + 1)
+            showToast(`🔔 ${newNotif.subject || 'New atelier notification received'}`, 'info')
+          } else {
+            fetchNotifications()
+          }
         }
       )
       .subscribe()
 
     return () => {
+      window.removeEventListener('atelier-notification-refresh', handleLocalRefresh)
       supabase.removeChannel(channel)
     }
-  }, [userId, supabase, showToast])
+  }, [userId, supabase, showToast, fetchNotifications])
 
   // Handle outside click / escape
   useEffect(() => {
@@ -151,10 +168,31 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
     }
   }
 
+  const handleItemClick = async (n: SystemNotificationLog) => {
+    await handleMarkAsRead(n.id)
+    setIsOpen(false)
+
+    if (n.notification_type === 'bag_reservation_inquiry') {
+      router.push('/dashboard?tab=handbags')
+    } else if (
+      n.notification_type === 'booking_confirmation' ||
+      n.notification_type === 'booking_created'
+    ) {
+      router.push('/dashboard?tab=upcoming')
+    } else if (n.notification_type === 'waitlist_promoted') {
+      router.push('/dashboard?tab=waitlist')
+    } else {
+      router.push('/dashboard')
+    }
+  }
+
   const getNotifIcon = (type: string) => {
     switch (type) {
       case 'booking_confirmation':
+      case 'booking_created':
         return <Calendar className="w-4 h-4 text-primary" />
+      case 'bag_reservation_inquiry':
+        return <ShoppingBag className="w-4 h-4 text-primary" />
       case 'booking_cancellation':
         return <AlertCircle className="w-4 h-4 text-[#9e3b32]" />
       case 'waitlist_promoted':
@@ -239,7 +277,7 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
                 return (
                   <div
                     key={n.id}
-                    onClick={() => !isRead && handleMarkAsRead(n.id)}
+                    onClick={() => handleItemClick(n)}
                     className={`p-3.5 transition-colors cursor-pointer flex items-start gap-3 ${
                       isRead ? 'bg-card hover:bg-muted/40 opacity-75' : 'bg-primary/5 hover:bg-primary/10'
                     }`}
@@ -261,8 +299,10 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
                       </p>
                     </div>
 
-                    {!isRead && (
+                    {!isRead ? (
                       <span className="w-2 h-2 rounded-full bg-primary shrink-0 mt-1.5" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 mt-1.5" />
                     )}
                   </div>
                 )
