@@ -24,11 +24,14 @@ export type LandingShowcaseSession = Session & {
 
 interface LandingSessionsShowcaseProps {
   onSelectSession: (session: LandingShowcaseSession) => void
+  onOpenConsultation?: () => void
 }
 
 export function LandingSessionsShowcase({
   onSelectSession,
+  onOpenConsultation,
 }: LandingSessionsShowcaseProps) {
+
   const supabase = useMemo(() => createClient(), [])
   const [sessions, setSessions] = useState<LandingShowcaseSession[]>([])
   const [loading, setLoading] = useState(true)
@@ -143,16 +146,36 @@ export function LandingSessionsShowcase({
             </p>
           </div>
 
-          <div className="shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {onOpenConsultation ? (
+              <button
+                type="button"
+                onClick={onOpenConsultation}
+                className="group inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold uppercase tracking-widest transition-all shadow-sm cursor-pointer active:scale-95"
+              >
+                <Sparkles size={14} className="text-accent" />
+                <span>Book Consultation</span>
+              </button>
+            ) : (
+              <Link
+                href="/sessions/consultation"
+                className="group inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-bold uppercase tracking-widest transition-all shadow-sm"
+              >
+                <Sparkles size={14} className="text-accent" />
+                <span>Book Consultation</span>
+              </Link>
+            )}
+
             <Link
               href="/sessions"
-              className="group inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground text-xs font-bold uppercase tracking-widest transition-all shadow-xs"
+              className="group inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-bold uppercase tracking-widest transition-all shadow-xs"
             >
-              <span>Explore All Sessions &amp; Calendar</span>
-              <ArrowRight size={15} className="transition-transform group-hover:translate-x-1" />
+              <span>Explore Calendar</span>
+              <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
             </Link>
           </div>
         </div>
+
 
         {/* Sessions Grid */}
         <div className="mt-12">
@@ -312,14 +335,28 @@ export function LandingSessionsShowcase({
               </p>
             </div>
           </div>
-          <Link
-            href="/sessions"
-            className="shrink-0 text-xs font-bold uppercase tracking-widest text-primary hover:text-foreground transition-colors inline-flex items-center gap-1.5"
-          >
-            <span>Inquire for Bespoke Salon</span>
-            <ArrowRight size={14} />
-          </Link>
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            {onOpenConsultation ? (
+              <button
+                type="button"
+                onClick={onOpenConsultation}
+                className="text-xs font-bold uppercase tracking-widest text-primary hover:text-foreground transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Schedule Private Consultation</span>
+                <ArrowRight size={14} />
+              </button>
+            ) : (
+              <Link
+                href="/sessions/consultation"
+                className="text-xs font-bold uppercase tracking-widest text-primary hover:text-foreground transition-colors inline-flex items-center gap-1.5"
+              >
+                <span>Schedule Private Consultation</span>
+                <ArrowRight size={14} />
+              </Link>
+            )}
+          </div>
         </div>
+
       </div>
     </section>
   )

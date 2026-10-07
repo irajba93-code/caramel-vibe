@@ -31,6 +31,8 @@ import {
 } from '@/components/landing/LandingSessionsShowcase'
 import { ClientBookingDrawer } from '@/components/client/ClientBookingDrawer'
 import { ClientNotificationCenter } from '@/components/client/ClientNotificationCenter'
+import { CalendlyModal } from '@/components/booking/CalendlyModal'
+
 
 function Header({
   profile,
@@ -299,6 +301,7 @@ function LandingContent() {
   // Sessions Drawer State
   const [selectedSession, setSelectedSession] = useState<LandingShowcaseSession | null>(null)
   const [sessionDrawerOpen, setSessionDrawerOpen] = useState(false)
+  const [consultationModalOpen, setConsultationModalOpen] = useState(false)
 
   // Auth checking
   useEffect(() => {
@@ -357,8 +360,16 @@ function LandingContent() {
   useEffect(() => {
     if (isAuthLoading) return
 
+    const bookConsultationParam = searchParams.get('bookConsultation')
+    if (bookConsultationParam === 'true') {
+      setConsultationModalOpen(true)
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
     const reserveBagParam = searchParams.get('reserveBag')
     const bookSessionIdParam = searchParams.get('bookSessionId')
+
 
     if (reserveBagParam) {
       if (profile) {
@@ -566,8 +577,12 @@ function LandingContent() {
           </div>
         </section>
 
-        {/* Live Supabase Atelier Sessions Showcase with Gated Booking */}
-        <LandingSessionsShowcase onSelectSession={handleSessionBookingClick} />
+        {/* Live Supabase Atelier Sessions Showcase with Gated Booking & Consultation Embed */}
+        <LandingSessionsShowcase
+          onSelectSession={handleSessionBookingClick}
+          onOpenConsultation={() => setConsultationModalOpen(true)}
+        />
+
 
         {/* Brand Story Section */}
         <section id="story" className="container-cv grid gap-12 py-24 md:grid-cols-2 md:items-center">
@@ -675,9 +690,20 @@ function LandingContent() {
           showToast('Atelier experience spot reserved successfully!', 'success')
         }}
       />
+
+      {/* 1-on-1 Atelier Consultation Slide-over Calendly Drawer */}
+      <CalendlyModal
+        isOpen={consultationModalOpen}
+        onClose={() => setConsultationModalOpen(false)}
+        prefill={{
+          name: profile?.full_name || null,
+          email: profile?.email || null,
+        }}
+      />
     </>
   )
 }
+
 
 export default function Page() {
   return (

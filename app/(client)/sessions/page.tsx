@@ -11,6 +11,8 @@ import {
 } from '@/components/client/ClientSessionsCalendar'
 import { ClientSessionsGrid } from '@/components/client/ClientSessionsGrid'
 import { ClientBookingDrawer } from '@/components/client/ClientBookingDrawer'
+import { CalendlyModal } from '@/components/booking/CalendlyModal'
+import type { CalendlyPrefillOptions } from '@/lib/calendly/types'
 import {
   Calendar as CalendarIcon,
   LayoutGrid,
@@ -24,6 +26,7 @@ import {
   CheckCircle2,
   Clock,
   MapPin,
+  CalendarCheck,
 } from 'lucide-react'
 
 function AtelierSessionsContent() {
@@ -37,6 +40,8 @@ function AtelierSessionsContent() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [calendlyPrefill, setCalendlyPrefill] = useState<CalendlyPrefillOptions>({})
+  const [isCalendlyModalOpen, setIsCalendlyModalOpen] = useState(false)
 
   // Filters & View Modes
   const [viewMode, setViewMode] = useState<'calendar' | 'grid' | 'list'>('calendar')
@@ -55,9 +60,23 @@ function AtelierSessionsContent() {
         data: { user },
       } = await supabase.auth.getUser()
       setCurrentUser(user)
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', user.id)
+          .single()
+
+        setCalendlyPrefill({
+          name: profile?.full_name || (user.user_metadata?.full_name as string) || null,
+          email: user.email || profile?.email || null,
+        })
+      }
     }
     checkUser()
   }, [supabase])
+
 
   // Load Sessions Data
   const loadSessions = useCallback(async (showIndicator = false) => {
@@ -103,6 +122,13 @@ function AtelierSessionsContent() {
 
   // Intent Recovery on Load (e.g. redirected back after login)
   useEffect(() => {
+    const bookConsultationParam = searchParams.get('bookConsultation')
+    if (bookConsultationParam === 'true') {
+      setIsCalendlyModalOpen(true)
+      window.history.replaceState({}, '', window.location.pathname)
+      return
+    }
+
     if (loading || sessions.length === 0) return
 
     const bookSessionIdParam = searchParams.get('bookSessionId')
@@ -115,6 +141,7 @@ function AtelierSessionsContent() {
       }
     }
   }, [searchParams, sessions, loading, showToast])
+
 
   // Realtime Subscriptions for live capacity updates
   useEffect(() => {
@@ -282,7 +309,42 @@ function AtelierSessionsContent() {
             </div>
           </div>
         </div>
+
+        {/* 1-on-1 Bespoke Consultation Callout */}
+        <div className="mt-6 p-5 sm:p-6 rounded-2xl bg-primary/5 border border-primary/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-primary uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Private 1-on-1 Atelier Consultation</span>
+            </div>
+            <p className="text-xs sm:text-sm text-foreground font-semibold">
+              Looking for a bespoke styling session or heirloom handbag authentication?
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Book directly into our master curator schedule with instant confirmation.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsCalendlyModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all shadow-xs cursor-pointer active:scale-95 flex items-center gap-2"
+            >
+              <CalendarCheck className="w-3.5 h-3.5" />
+              <span>Schedule 1-on-1</span>
+            </button>
+
+            <Link
+              href="/sessions/consultation"
+              className="px-4 py-2.5 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-bold uppercase tracking-wider transition-colors"
+            >
+              Learn More
+            </Link>
+          </div>
+        </div>
       </div>
+
 
       {/* Filter & View Switcher Toolbar */}
       <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
@@ -410,9 +472,17 @@ function AtelierSessionsContent() {
         onClose={() => setSelectedSessionForBooking(null)}
         onSuccess={() => loadSessions()}
       />
+
+      {/* 1-on-1 Consultation Slide-over Calendly Drawer */}
+      <CalendlyModal
+        isOpen={isCalendlyModalOpen}
+        onClose={() => setIsCalendlyModalOpen(false)}
+        prefill={calendlyPrefill}
+      />
     </div>
   )
 }
+
 
 export default function AtelierSessionsPage() {
   return (

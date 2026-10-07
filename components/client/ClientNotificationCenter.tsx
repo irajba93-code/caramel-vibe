@@ -176,7 +176,9 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
       router.push('/dashboard?tab=handbags')
     } else if (
       n.notification_type === 'booking_confirmation' ||
-      n.notification_type === 'booking_created'
+      n.notification_type === 'booking_created' ||
+      n.notification_type === 'session_booking' ||
+      n.notification_type === 'consultation_booking'
     ) {
       router.push('/dashboard?tab=upcoming')
     } else if (n.notification_type === 'waitlist_promoted') {
@@ -190,6 +192,8 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
     switch (type) {
       case 'booking_confirmation':
       case 'booking_created':
+      case 'session_booking':
+      case 'consultation_booking':
         return <Calendar className="w-4 h-4 text-primary" />
       case 'bag_reservation_inquiry':
         return <ShoppingBag className="w-4 h-4 text-primary" />
@@ -201,6 +205,7 @@ export function ClientNotificationCenter({ userId }: ClientNotificationCenterPro
         return <ShieldCheck className="w-4 h-4 text-accent" />
     }
   }
+
 
   const formatTimestamp = (dateStr: string) => {
     try {

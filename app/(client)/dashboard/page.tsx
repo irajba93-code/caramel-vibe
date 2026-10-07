@@ -10,7 +10,9 @@ import { Avatar } from '@/components/ui/Avatar'
 import { ClientPassModal, type ClientPassBooking } from '@/components/client/ClientPassModal'
 import { ClientCancelModal } from '@/components/client/ClientCancelModal'
 import { ClientBookingDrawer } from '@/components/client/ClientBookingDrawer'
+import { CalendlyModal } from '@/components/booking/CalendlyModal'
 import { generateIcsFile } from '@/lib/client/calendarExport'
+
 import {
   Calendar,
   Clock,
@@ -93,12 +95,18 @@ function MemberDashboardContent() {
 
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'upcoming' | 'handbags' | 'waitlist' | 'history'>('upcoming')
+  const [isConsultationModalOpen, setIsConsultationModalOpen] = useState(false)
 
-  // Sync tab from URL search parameters if provided
+  // Sync tab and modal from URL search parameters if provided
   useEffect(() => {
     const tabParam = searchParams.get('tab')
     if (tabParam === 'handbags' || tabParam === 'waitlist' || tabParam === 'history' || tabParam === 'upcoming') {
       setActiveTab(tabParam)
+    }
+
+    if (searchParams.get('bookConsultation') === 'true') {
+      setIsConsultationModalOpen(true)
+      window.history.replaceState({}, '', window.location.pathname)
     }
   }, [searchParams])
 
@@ -106,6 +114,7 @@ function MemberDashboardContent() {
   const [selectedPassBooking, setSelectedPassBooking] = useState<FormattedBooking | null>(null)
   const [selectedCancelBooking, setSelectedCancelBooking] = useState<FormattedBooking | null>(null)
   const [selectedBookingSession, setSelectedBookingSession] = useState<(Session & { category_name?: string }) | null>(null)
+
 
   // Fetch all client data
   const loadDashboardData = useCallback(async (showIndicator = false) => {
@@ -485,6 +494,15 @@ function MemberDashboardContent() {
               <span>Dossier Settings</span>
             </Link>
 
+            <button
+              type="button"
+              onClick={() => setIsConsultationModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>1-on-1 Consultation</span>
+            </button>
+
             <Link
               href="/sessions"
               className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm"
@@ -553,7 +571,42 @@ function MemberDashboardContent() {
             </div>
           </div>
         </div>
+
+        {/* 1-on-1 Atelier Consultation Banner */}
+        <div className="mt-6 p-5 sm:p-6 rounded-2xl bg-accent/10 border border-accent/25 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-accent uppercase tracking-wider">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Private Bespoke Styling &amp; Authentication</span>
+            </div>
+            <p className="text-xs sm:text-sm text-foreground font-semibold">
+              Need dedicated one-on-one time with our master atelier curator?
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Book a 45-minute private consultation for archival authentication, personal styling, or restoration guidance.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsConsultationModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:bg-primary/90 transition-all shadow-xs cursor-pointer active:scale-95 flex items-center gap-2"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Schedule 1-on-1</span>
+            </button>
+
+            <Link
+              href="/sessions/consultation"
+              className="px-4 py-2.5 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-xs font-bold uppercase tracking-wider transition-colors"
+            >
+              View Details
+            </Link>
+          </div>
+        </div>
       </div>
+
 
       {/* New Member 3-Step Onboarding Pathway (Conditional for 0 bookings) */}
       {isNewMember && (
@@ -1229,9 +1282,20 @@ function MemberDashboardContent() {
         onClose={() => setSelectedBookingSession(null)}
         onSuccess={() => loadDashboardData()}
       />
+
+      {/* 1-on-1 Consultation Slide-over Drawer */}
+      <CalendlyModal
+        isOpen={isConsultationModalOpen}
+        onClose={() => setIsConsultationModalOpen(false)}
+        prefill={{
+          name: profile?.full_name || null,
+          email: profile?.email || null,
+        }}
+      />
     </div>
   )
 }
+
 
 export default function MemberDashboardPage() {
   return (
